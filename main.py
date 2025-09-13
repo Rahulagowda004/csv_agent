@@ -9,6 +9,7 @@ from typing import Optional, List, Dict, Any
 import uvicorn
 import os
 import shutil
+import time
 
 from src.services.csv_agent import CSVAgentService
 
@@ -41,10 +42,11 @@ class ChatResponse(BaseModel):
     text: str
     steps: Optional[List[str]] = None
     image_paths: Optional[List[str]] = None
-    table_visualization: Optional[Dict[str, Any]] = None
+    table_visualization: Optional[List[Dict[str, Any]]] = None
     suggested_next_steps: Optional[List[str]] = None
     session_id: str
     user_id: str  # Include user_id in response
+    response_time_seconds: float  # Response time in seconds
 
 class UploadResponse(BaseModel):
     message: str
@@ -65,12 +67,22 @@ async def chat_endpoint(request: ChatRequest):
         ChatResponse with the agent's structured response
     """
     try:
+        # Start timing the request
+        start_time = time.time()
+        
         # Call the CSV agent service
         response = await csv_agent_service.process_message(
             message=request.message,
             user_id=request.user_id,
             session_id=request.session_id
         )
+        
+        # Calculate response time
+        end_time = time.time()
+        response_time = end_time - start_time
+        
+        # Add response time to the response
+        response["response_time_seconds"] = round(response_time, 2)
         
         return ChatResponse(**response)
         

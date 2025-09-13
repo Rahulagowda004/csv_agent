@@ -15,9 +15,9 @@ class CSVAgentResponse(BaseModel):
         default=None, 
         description="List of image file paths when data visualization tasks are present"
     )
-    table_visualization: Optional[Dict[str, Any]] = Field(
+    table_visualization: Optional[List[Dict[str, Any]]] = Field(
         default=None,
-        description="JSON data for table visualization output from tools"
+        description="List of dictionaries containing table data for visualization output from tools"
     )
     suggested_next_steps: Optional[List[str]] = Field(
         default=None,
