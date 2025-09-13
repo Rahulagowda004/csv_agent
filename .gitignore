@@ -128,6 +128,8 @@ fabric.properties
 [Ll]ocal
 [Ss]cripts
 pyvenv.cfg
+venv/
+.venv/
 .env
 pip-selfcheck.json
 
