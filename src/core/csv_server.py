@@ -1,14 +1,13 @@
 # server.py
-from fastmcp import FastMCP, Context
+from fastmcp import FastMCP
 from pathlib import Path
-import json, os, subprocess, textwrap, tempfile
+import os, subprocess, tempfile
 import pandas as pd
 import numpy as np
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
 load_dotenv()
-
 mcp = FastMCP("CSV-Data-Analysis")
 
 # ── tools ────────────────────────────────────────────────────────────

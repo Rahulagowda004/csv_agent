@@ -19,9 +19,8 @@ if not openai_api_key:
 os.environ["OPENAI_API_KEY"] = openai_api_key
 
 server_params = StdioServerParameters(
-    command="./venv/bin/python",
-    # Path to the coding agent MCP server
-    args=["./server.py"],
+    command=".venv/Scripts/python",
+    args=["src/core/csv_server.py"],
     env={"OPENAI_API_KEY": openai_api_key}
 )
 
