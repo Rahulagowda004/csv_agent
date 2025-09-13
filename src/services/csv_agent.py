@@ -1,20 +1,21 @@
-# Create server parameters for stdio connection
+# OpenAI Agents SDK CSV Analysis Agent Service
+import asyncio
 import os
 import json
-from tabnanny import verbose
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+import time
+from pathlib import Path
+from typing import Optional, List, Any, Dict
 from dotenv import load_dotenv
-from pydantic import BaseModel, Field
-from typing import Literal, Optional, List, Any, Dict
 
-from langchain_mcp_adapters.tools import load_mcp_tools
-from langgraph.prebuilt import create_react_agent
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import SystemMessage
+from agents import Agent, Runner, AgentOutputSchema, enable_verbose_stdout_logging
+from agents.mcp import MCPServerStdio
+from agents.model_settings import ModelSettings
+from agents.memory import SQLiteSession
 
-# Import system prompt
+# Import system prompt, memory config, and models
 from src.constants.prompts import CSV_AGENT_SYSTEM_PROMPT
+from src.constants.memory_config import setup_memory_db, get_session_id
+from src.constants.model_properties import CSVAgentResponse
 
 # Load environment variables from .env file in project root
 load_dotenv(os.path.join(os.path.dirname(__file__), '..', '..', '.env'))
@@ -24,225 +25,361 @@ openai_api_key = os.getenv("OPENAI_API_KEY")
 if not openai_api_key:
     raise ValueError("OPENAI_API_KEY environment variable is required")
 
-os.environ["OPENAI_API_KEY"] = openai_api_key
 
-class CSVAgentResponse(BaseModel):
-    """Structured response from CSV analysis agent."""
-    text: str = Field(description="The main text content from the agent message")
-    tool_calls: Optional[List[str]] = Field(
-        default=None,
-        description="Readable format of tool messages and their outputs"
-    )
-    image_paths: Optional[List[str]] = Field(
-        default=None, 
-        description="List of image file paths when data visualization tasks are present"
-    )
-    table_visualization: Optional[Dict[str, Any]] = Field(
-        default=None,
-        description="JSON data for table visualization output from tools"
-    )
-    suggested_next_steps: Optional[List[str]] = Field(
-        default=None,
-        description="List of suggested queries when user options are vague"
-    )
-
-
-def extract_tool_calls_readable(messages: List[Any]) -> List[str]:
-    """Extract tool calls from messages and format them in a readable way."""
-    tool_calls_readable = []
+class CSVAgentService:
+    """Service class that handles CSV agent business logic."""
     
-    for message in messages:
-        # Check for tool calls in AI messages
-        if hasattr(message, 'tool_calls') and message.tool_calls:
-            for tool_call in message.tool_calls:
-                tool_name = tool_call.get('name', 'Unknown Tool')
-                tool_args = tool_call.get('args', {})
-                readable_call = f"🔧 Used {tool_name}"
-                if tool_args:
-                    # Format arguments in a readable way
-                    args_str = ", ".join([f"{k}: {v}" for k, v in tool_args.items() if v])
-                    readable_call += f" with parameters: {args_str}"
-                tool_calls_readable.append(readable_call)
+    def __init__(self):
+        """Initialize the CSV agent service."""
+        self.openai_api_key = openai_api_key
+        self.db_path = None
+        self.sessions = {}  # Store active sessions
         
-        # Check for tool messages (responses from tools)
-        if hasattr(message, 'name') and hasattr(message, 'content'):
-            tool_name = message.name
-            content = str(message.content)
-            # Truncate very long content
-            if len(content) > 200:
-                content = content[:200] + "..."
-            readable_response = f"📊 {tool_name} returned: {content}"
-            tool_calls_readable.append(readable_response)
-    
-    return tool_calls_readable
-
-
-async def create_structured_output_from_response(agent_response: Dict[str, Any]) -> CSVAgentResponse:
-    """
-    Main function to create structured output from agent response.
-    This is the function you should use to format any agent response.
-    """
-    return await format_agent_response_structured(agent_response)
-
-
-async def format_agent_response_structured(agent_response: Dict[str, Any]) -> CSVAgentResponse:
-    """
-    Takes the entire agent_response and uses an LLM to create structured output.
-    
-    Args:
-        agent_response: The complete response from the react agent
+    def _create_user_folder(self, user_id: str) -> str:
+        """
+        Create user-specific folders for CSV data and visualizations.
         
-    Returns:
-        CSVAgentResponse: Structured output with text, tool_calls, image_paths, 
-                         table_visualization, and suggested_next_steps
-    """
-    # Initialize the structured LLM
-    model = ChatOpenAI(model="gpt-4o", temperature=0)
-    structured_llm = model.with_structured_output(CSVAgentResponse)
+        Args:
+            user_id: User identifier
+            
+        Returns:
+            Path to the user's CSV folder (data/csv/user_id/)
+        """
+        # Get project root directory
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        
+        # Create user folder path (sanitize user_id for filesystem)
+        safe_user_id = "".join(c for c in user_id if c.isalnum() or c in ('-', '_')).rstrip()
+        if not safe_user_id:
+            safe_user_id = "default_user"
+        
+        # Create separate folders for CSV files and plots
+        csv_folder = os.path.join(project_root, "data", "csv", safe_user_id)
+        plots_folder = os.path.join(project_root, "data", "plots", safe_user_id)
+        
+        # Create both folders if they don't exist with proper permissions
+        os.makedirs(csv_folder, mode=0o755, exist_ok=True)
+        os.makedirs(plots_folder, mode=0o755, exist_ok=True)
+        
+        print(f"📁 Created CSV folder: {csv_folder}")
+        print(f"📊 Created plots folder: {plots_folder}")
+        
+        return csv_folder
+        
+    async def process_message(self, message: str, user_id: str, session_id: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Process a user message through the CSV agent.
+        
+        Args:
+            message: User's message/question
+            user_id: User ID for folder management and data isolation
+            session_id: Optional session ID for conversation continuity
+            
+        Returns:
+            Dict containing the agent's structured response
+        """
+        print(f"🔄 CSVAgentService: Processing message: '{message[:100]}{'...' if len(message) > 100 else ''}'")
+        print(f"👤 CSVAgentService: User ID: {user_id}")
+        
+        try:
+            # Ensure user folders exist
+            self._create_user_folder(user_id)
+            print(f"📁 CSVAgentService: User folders ready for user: {user_id}")
+            # Set up memory database if not already done
+            if not self.db_path:
+                print("📂 CSVAgentService: Setting up memory database...")
+                self.db_path = setup_memory_db()
+                print(f"✅ CSVAgentService: Memory database initialized at: {self.db_path}")
+            
+            # Generate session ID if not provided
+            if not session_id:
+                session_id = get_session_id()
+                print(f"🆔 CSVAgentService: Generated new session ID: {session_id}")
+            else:
+                print(f"🆔 CSVAgentService: Using existing session ID: {session_id}")
+            
+            # Get or create memory session
+            if session_id not in self.sessions:
+                print(f"🧠 CSVAgentService: Creating new memory session for: {session_id}")
+                self.sessions[session_id] = SQLiteSession(
+                    session_id=session_id,
+                    db_path=str(self.db_path)
+                )
+            else:
+                print(f"🧠 CSVAgentService: Using existing memory session for: {session_id}")
+            
+            memory_session = self.sessions[session_id]
+            
+            print("🔗 CSVAgentService: Connecting to MCP server...")
+            # Set up MCP server connection for CSV tools (stdio)
+            async with MCPServerStdio(
+                name="CSV Analysis Server",
+                params={
+                    "command": "venv/bin/python",
+                    "args": ["src/core/csv_server.py"],
+                    "env": {"OPENAI_API_KEY": self.openai_api_key},
+                },
+            ) as mcp_server:
+                print("✅ CSVAgentService: MCP server connected successfully")
+                
+                print("🤖 CSVAgentService: Creating CSV analysis agent...")
+                # Create the agent with structured output and memory
+                # Add folder paths to system prompt
+                agent_instructions = f"""{CSV_AGENT_SYSTEM_PROMPT}
+
+**IMPORTANT - Your user folder name: {user_id}**
+- Read CSV data from: `data/csv/{user_id}/data.csv`
+- Save images to: `data/plots/{user_id}/image_name.png`
+
+When using execute_code(), define paths like:
+```python
+import pandas as pd
+import matplotlib.pyplot as plt
+
+# Read data
+df = pd.read_csv('data/csv/{user_id}/data.csv')
+
+# Save plots
+plt.savefig('data/plots/{user_id}/chart.png')
+```"""
+                
+                agent = Agent(
+                    name="CSV Analysis Agent",
+                    instructions=agent_instructions,
+                    mcp_servers=[mcp_server],
+                    output_type=AgentOutputSchema(CSVAgentResponse, strict_json_schema=False),
+                    model_settings=ModelSettings(
+                        model="gpt-5",
+                        temperature=0,
+                        tool_choice="auto"
+                    ),
+                )
+                print("✅ CSVAgentService: Agent created successfully")
+                
+                print("🚀 CSVAgentService: Running agent with user message...")
+                # Run agent with persistent memory
+                result = await Runner.run(
+                    agent, 
+                    input=message,
+                    session=memory_session,
+                    max_turns=10
+                )
+                print("✅ CSVAgentService: Agent execution completed")
+                
+                print("📊 CSVAgentService: Processing agent response...")
+                # Extract structured response
+                if isinstance(result.final_output, CSVAgentResponse):
+                    response_data = result.final_output.model_dump()
+                    print("✅ CSVAgentService: Structured response extracted successfully")
+                else:
+                    print("⚠️ CSVAgentService: Falling back to unstructured response")
+                    # Fallback if structured output fails
+                    response_data = {
+                        "text": str(result.final_output),
+                        "steps": None,
+                        "image_paths": None,
+                        "table_visualization": None,
+                        "suggested_next_steps": None
+                    }
+                
+                # Add session ID and user ID to response
+                response_data["session_id"] = session_id
+                response_data["user_id"] = user_id
+                
+                # Show memory stats
+                try:
+                    memory_items = await memory_session.get_items()
+                    total_items = len(memory_items) if memory_items else 0
+                    print(f"💭 CSVAgentService: Conversation memory contains {total_items} items")
+                except Exception as mem_error:
+                    print(f"⚠️ CSVAgentService: Could not retrieve memory stats: {mem_error}")
+                
+                print("✅ CSVAgentService: Message processing completed successfully")
+                return response_data
+                
+        except Exception as e:
+            print(f"❌ CSVAgentService: Error processing message: {str(e)}")
+            print(f"❌ CSVAgentService: Exception type: {type(e).__name__}")
+            # Return error in structured format
+            return {
+                "text": f"Error processing request: {str(e)}",
+                "steps": None,
+                "image_paths": None,
+                "table_visualization": None,
+                "suggested_next_steps": None,
+                "session_id": session_id or get_session_id(),
+                "user_id": user_id
+            }
     
-    # Extract messages from agent response
-    messages = agent_response.get('messages', [])
+    async def clear_session(self, session_id: str) -> bool:
+        """Clear a specific session's memory."""
+        try:
+            if session_id in self.sessions:
+                await self.sessions[session_id].clear_session()
+                self.sessions[session_id].close()
+                del self.sessions[session_id]
+                return True
+            return False
+        except Exception:
+            return False
     
-    # Extract main text content from the final AI message
-    main_text = ""
-    for message in reversed(messages):  # Start from the last message
-        if hasattr(message, 'content') and message.content and not hasattr(message, 'name'):
-            main_text = str(message.content)
-            break
-    
-    # Extract tool calls in readable format
-    tool_calls_readable = extract_tool_calls_readable(messages)
-    
-    # Create a comprehensive prompt for the LLM to structure the response
-    structure_prompt = f"""
-    Please analyze this agent response and extract structured information:
-    
-    MAIN CONTENT:
-    {main_text}
-    
-    TOOL INTERACTIONS:
-    {chr(10).join(tool_calls_readable) if tool_calls_readable else "No tool calls"}
-    
-    FULL MESSAGES CONTEXT:
-    {str(messages)}...
-    
-    Extract and structure this information into:
-    1. text: The main readable content/analysis from the agent
-    2. tool_calls: List of readable descriptions of what tools were used and their key outputs. Display the steps taken by the agent, explain in simple terms what the agent did.
-    3. image_paths: Any file paths to images/plots that were created 
-    4. table_visualization: Any JSON/dict data that represents tabular data for visualization
-    5. suggested_next_steps: If the query was vague, suggest specific follow-up questions/analyses
-    
-    Focus on extracting actionable, useful information for the user.
-    """
-    
-    try:
-        structured_response = await structured_llm.ainvoke(structure_prompt)
-        return structured_response
-    except Exception as e:
-        # Fallback: create a basic structured response if LLM fails
-        return CSVAgentResponse(
-            text=main_text or "Analysis completed",
-            tool_calls=tool_calls_readable if tool_calls_readable else None,
-            image_paths=None,
-            table_visualization=None,
-            suggested_next_steps=None
-        )
+    def close_all_sessions(self):
+        """Close all active sessions."""
+        for session in self.sessions.values():
+            try:
+                session.close()
+            except Exception:
+                pass
+        self.sessions.clear()
 
 
-server_params = StdioServerParameters(
-    command="venv/bin/python",
-    args=["src/core/csv_server.py"],
-    env={"OPENAI_API_KEY": openai_api_key}
-)
 
-async def main():
-    async with stdio_client(server_params) as (read, write):
-        async with ClientSession(read, write) as session:
-            # Initialize the connection
-            await session.initialize()
 
-            # Get tools
-            tools = await load_mcp_tools(session)
+# COMMENTED OUT - Main function moved to separate CLI script if needed
+# This was the original CLI chat interface, now replaced by FastAPI endpoint
 
-            # Create and run the agent (without structured output at this level)
-            model = ChatOpenAI(model="gpt-4o", temperature=0)
-            agent = create_react_agent(
-                model=model,
-                tools=tools,
-                prompt=SystemMessage(content=CSV_AGENT_SYSTEM_PROMPT)
-            )
-            
-            # Test the CSV analysis functionality with visualization
-            test_message = """Please analyze the CSV data in the ./data folder. 
-            After analyzing the data, create meaningful visualizations (charts, plots) based on the data patterns you find. 
-            Save all generated visualizations as image files (PNG format) in the same data directory. 
-            Provide a comprehensive analysis report including:
-            1. Data overview and structure
-            2. Statistical insights
-            3. Data quality assessment
-            4. Key findings and patterns
-            5. Recommendations based on the analysis
-            
-            Make sure to save any plots or charts you create to help visualize the data insights."""
-            
-            print("=" * 80)
-            print("🚀 TESTING CSV DATA ANALYSIS")
-            print("=" * 80)
-            print(f"📝 Query: {test_message}")
-            print("-" * 80)
-            
-            agent_response = await agent.ainvoke({"messages": test_message})
-            
-            print("\n🤖 AGENT RESPONSE:")
-            print("=" * 80)
-            
-            # Use the new structured output function
-            structured_data = await create_structured_output_from_response(agent_response)
-            
-            print(f"\n📊 STRUCTURED RESPONSE:")
-            print("-" * 40)
-            print(f"📝 Text: {structured_data.text}")
-            
-            if structured_data.tool_calls:
-                print(f"\n🔧 Tool Calls ({len(structured_data.tool_calls)}):")
-                for i, tool_call in enumerate(structured_data.tool_calls, 1):
-                    print(f"  {i}. {tool_call}")
-            
-            if structured_data.image_paths:
-                print(f"\n🖼️ Image Paths ({len(structured_data.image_paths)}):")
-                for i, path in enumerate(structured_data.image_paths, 1):
-                    print(f"  {i}. {path}")
-            
-            if structured_data.table_visualization:
-                print(f"\n📈 Table Visualization:")
-                print(f"  Data: {structured_data.table_visualization}")
-            
-            if structured_data.suggested_next_steps:
-                print(f"\n💡 Suggested Next Steps ({len(structured_data.suggested_next_steps)}):")
-                for i, step in enumerate(structured_data.suggested_next_steps, 1):
-                    print(f"  {i}. {step}")
-            print("\n\nENTIRE JSON STRUCTURED DATA:")
-            print(json.dumps(structured_data.model_dump(), indent=2, ensure_ascii=False))
-            # Also show raw messages for debugging
-            print(f"\n🔧 RAW MESSAGES (for debugging):")
-            print("-" * 40)
-            if 'messages' in agent_response:
-                for i, message in enumerate(agent_response['messages']):
-                    print(f"\n📨 Message {i+1}: {type(message).__name__}")
-                    if hasattr(message, 'content'):
-                        print(f"Content: {message.content}")
-                    if hasattr(message, 'tool_calls') and message.tool_calls:
-                        print(f"Tool Calls: {len(message.tool_calls)}")
-                        for j, tool_call in enumerate(message.tool_calls):
-                            print(f"  🔧 Tool {j+1}: {tool_call.get('name', 'Unknown')}")
-                    if hasattr(message, 'name'):
-                        print(f"Tool: {message.name}")
-            
-            print("=" * 80)
-            print("✅ TESTING COMPLETED")
-            print("=" * 80)
+# async def main():
+#     """Main function to run the CSV analysis agent with persistent memory."""
+#     
+#     # Enable verbose logging for debugging
+#     enable_verbose_stdout_logging()
+#     
+#     # Set up memory database
+#     db_path = setup_memory_db()
+#     
+#     # Create unique session ID for this chat session
+#     session_id = get_session_id()
+#     
+#     # Initialize persistent memory session
+#     memory_session = SQLiteSession(
+#         session_id=session_id,
+#         db_path=str(db_path)
+#     )
+#     
+#     print("=" * 80)
+#     print("🤖 CSV DATA ANALYSIS CHAT (OpenAI Agents SDK)")
+#     print("=" * 80)
+#     print("Welcome! I'm your CSV analysis assistant powered by OpenAI Agents SDK.")
+#     print("I can help you analyze data, create visualizations, and answer questions about your CSV files.")
+#     print("Type 'stop' to end the chat.")
+#     print(f"💾 Session ID: {session_id}")
+#     print(f"📂 Memory Database: {db_path}")
+#     print("-" * 80)
+#     
+#     try:
+#         # Set up MCP server connection for CSV tools (stdio)
+#         async with MCPServerStdio(
+#             name="CSV Analysis Server",
+#             params={
+#                 "command": "venv/bin/python",
+#                 "args": ["src/core/csv_server.py"],
+#                 "env": {"OPENAI_API_KEY": openai_api_key},
+#             },
+#         ) as mcp_server:
+#             
+#             # Create the agent with structured output and memory
+#             agent = Agent(
+#                 name="CSV Analysis Agent",
+#                 instructions=CSV_AGENT_SYSTEM_PROMPT,
+#                 mcp_servers=[mcp_server],
+#                 output_type=AgentOutputSchema(CSVAgentResponse, strict_json_schema=False),  # Wrapped for compatibility
+#                 model_settings=ModelSettings(
+#                     model="gpt-5",
+#                     temperature=0,
+#                     tool_choice="auto"
+#                 ),
+#             )
+#             
+#             print("✅ Agent initialized successfully!")
+#             print("🔗 MCP server connected")
+#             print("🧠 Memory system ready")
+#             print("-" * 80)
+#             
+#             # Interactive chat loop
+#             while True:
+#                 try:
+#                     # Get user input
+#                     user_input = input("\n💬 You: ").strip()
+#                     
+#                     # Check for exit condition
+#                     if user_input.lower() == 'stop':
+#                         print("\n👋 Goodbye! Thanks for using the CSV Analysis Chat!")
+#                         break
+#                     
+#                     # Skip empty inputs
+#                     if not user_input:
+#                         print("Please enter a question or type 'stop' to exit.")
+#                         continue
+#                     
+#                     print(f"\n🔄 Processing your request...")
+#                     
+#                     # Run agent with persistent memory
+#                     result = await Runner.run(
+#                         agent, 
+#                         input=user_input,
+#                         session=memory_session,  # Persistent conversation memory
+#                         max_turns=10
+#                     )
+#                     
+#                     # Extract structured response
+#                     if isinstance(result.final_output, CSVAgentResponse):
+#                         response_json = result.final_output.model_dump()
+#                     else:
+#                         # Fallback if structured output fails
+#                         response_json = {
+#                             "text": str(result.final_output),
+#                             "steps": None,
+#                             "image_paths": None,
+#                             "table_visualization": None,
+#                             "suggested_next_steps": None
+#                         }
+#                     
+#                     # Display structured JSON response
+#                     print(f"\n🤖 Assistant JSON Response:")
+#                     print("-" * 50)
+#                     print(json.dumps(response_json, indent=2, ensure_ascii=False))
+#                     print("-" * 50)
+#                     
+#                     # Show memory stats
+#                     memory_items = await memory_session.get_items(limit=1)
+#                     total_items = len(await memory_session.get_items())
+#                     print(f"💭 Conversation memory: {total_items} items stored")
+#                     
+#                 except KeyboardInterrupt:
+#                     print("\n\n👋 Chat interrupted. Goodbye!")
+#                     break
+#                 except Exception as e:
+#                     print(f"\n❌ Error: {str(e)}")
+#                     print("Please try again or type 'stop' to exit.")
+#                     
+#                     # Optional: Clear corrupted session on repeated errors
+#                     error_count = getattr(main, 'error_count', 0) + 1
+#                     main.error_count = error_count
+#                     if error_count >= 3:
+#                         print("🔧 Multiple errors detected. Clearing session memory...")
+#                         await memory_session.clear_session()
+#                         main.error_count = 0
+#     
+#     except Exception as e:
+#         print(f"\n💥 Critical error during setup: {str(e)}")
+#         print("Please check your MCP server is running and OpenAI API key is valid.")
+#     
+#     finally:
+#         # Clean up memory session
+#         try:
+#             memory_session.close()
+#             print("💾 Memory session closed")
+#         except Exception as e:
+#             print(f"Warning: Error closing memory session: {e}")
+#         
+#         print("\n" + "=" * 80)
+#         print("✅ CHAT SESSION ENDED")
+#         print("=" * 80)
+#             
 
-if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())
+# if __name__ == "__main__":
+#     # Run the main chat application
+#     asyncio.run(main())
+#     
+#     # Uncomment to test memory operations
+#     # asyncio.run(test_memory_operations())

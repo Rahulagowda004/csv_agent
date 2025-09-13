@@ -60,17 +60,17 @@ mcp = FastMCP("CSV-Data-Analysis")
 # Remember: Your goal is to make data analysis accessible and insightful for users of all technical levels."""
 
 @mcp.tool
-def analyze_csv_data(folder: str) -> dict:
-    """Analyze CSV data from a folder. Reads the single CSV file and provides comprehensive data profiling."""
-    print(f"🔍 DEBUG: analyze_csv_data called with folder: {folder}")
+def analyze_csv_data(user_folder: str) -> dict:
+    """Analyze CSV data from the user's folder. Reads the single CSV file and provides comprehensive data profiling."""
+    print(f"🔍 DEBUG: analyze_csv_data called for user folder: {user_folder}")
     
     try:
-        folder_path = Path(folder)
+        folder_path = Path(user_folder)
         print(f"🔍 DEBUG: folder_path = {folder_path}")
         print(f"🔍 DEBUG: folder exists: {folder_path.exists()}")
         
         if not folder_path.exists():
-            error_msg = f"Folder '{folder}' does not exist"
+            error_msg = f"User folder '{user_folder}' does not exist"
             print(f"❌ ERROR: {error_msg}")
             return {"error": error_msg}
         
@@ -79,12 +79,12 @@ def analyze_csv_data(folder: str) -> dict:
         print(f"🔍 DEBUG: Found CSV files: {csv_files}")
         
         if not csv_files:
-            error_msg = f"No CSV files found in folder '{folder}'"
+            error_msg = f"No CSV files found in user folder '{user_folder}'"
             print(f"❌ ERROR: {error_msg}")
             return {"error": error_msg}
         
         if len(csv_files) > 1:
-            error_msg = f"Multiple CSV files found in folder '{folder}'. Please ensure only one CSV file is present."
+            error_msg = f"Multiple CSV files found in user folder '{user_folder}'. Please ensure only one CSV file is present."
             print(f"❌ ERROR: {error_msg}")
             return {"error": error_msg}
         
@@ -229,7 +229,7 @@ def execute_code(script: str) -> str:
         # Create a more robust temp file path
         with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
             # Add imports for data analysis and visualization
-            imports = """
+            imports = f"""
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -238,6 +238,8 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import warnings
+import os
+from pathlib import Path
 warnings.filterwarnings('ignore')
 
 # Set matplotlib backend to non-interactive
@@ -246,6 +248,8 @@ plt.switch_backend('Agg')
 # Set style for better plots
 plt.style.use('default')
 sns.set_palette("husl")
+
+# Note: Folder paths will be defined directly in the user's script
 
 """
             f.write(imports + script)
