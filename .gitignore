@@ -8,6 +8,8 @@
 #neo4j envs
 Neo4j*.txt
 
+data/*
+
 # User-specific stuff
 .idea/**/workspace.xml
 .idea/**/tasks.xml
