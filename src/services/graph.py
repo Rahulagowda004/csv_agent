@@ -11,21 +11,28 @@ import os
 
 from src.constants.prompts import CSV_AGENT_SYSTEM_PROMPT
 
+# Load environment variables first
+load_dotenv()
+
 server_params = StdioServerParameters(
     command="./.venv/scripts/python",
     args=["src/core/csv_server.py"],
     env={"OPENAI_API_KEY": os.getenv("OPENAI_API_KEY") }
 )
 
-# Initialize tools synchronously
-with stdio_client(server_params) as (read, write):
-    with ClientSession(read, write) as session:
-        # Initialize the connection
-        session.initialize()
-        # Get tools
-        tools = load_mcp_tools(session)
+# Initialize tools
+import asyncio
 
-load_dotenv()
+async def get_tools():
+    async with stdio_client(server_params) as (read, write):
+        async with ClientSession(read, write) as session:
+            # Initialize the connection
+            await session.initialize()
+            # Get tools
+            return await load_mcp_tools(session)
+
+# Get tools synchronously by running the async function
+tools = asyncio.run(get_tools())
 
 class State(TypedDict):
     messages: Annotated[Sequence[BaseMessage],add_messages]
@@ -33,10 +40,10 @@ class State(TypedDict):
 llm = ChatOpenAI(model="gpt-4o")
 
 def bot(state: State) -> State:
-    """a simple chatbot"""
-    system_prompt = SystemMessage(content = "You are my AI assistant, please answer my query to the best of your ability.")
-    response = llm.invoke([system_prompt]+state["messages"])
-    return {"messages":[response]}
+    """CSV Agent with specialized system prompt"""
+    system_prompt = SystemMessage(content=CSV_AGENT_SYSTEM_PROMPT)
+    response = llm.invoke([system_prompt] + state["messages"])
+    return {"messages": [response]}
 
 def to_continue(state: State)->State:
     messages = state["messages"]
