@@ -6,57 +6,58 @@ import pandas as pd
 import numpy as np
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
-load_dotenv()
+# Load environment variables from .env file in project root
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+load_dotenv(os.path.join(project_root, '.env'))
 mcp = FastMCP("CSV-Data-Analysis")
 
-# ── tools ────────────────────────────────────────────────────────────
+# # ── tools ────────────────────────────────────────────────────────────
 
-@mcp.tool
-def get_system_prompt() -> str:
-    """Return the system prompt for the CSV data analysis agent."""
-    return """You are a specialized CSV Data Analysis Agent with expertise in data science, statistics, and visualization. Your primary role is to help users analyze CSV data files through comprehensive data profiling, statistical analysis, and visualization.
+# @mcp.tool
+# def get_system_prompt() -> str:
+#     """Return the system prompt for the CSV data analysis agent."""
+#     return """You are a specialized CSV Data Analysis Agent with expertise in data science, statistics, and visualization. Your primary role is to help users analyze CSV data files through comprehensive data profiling, statistical analysis, and visualization.
 
-## Core Capabilities:
-- **Data Analysis**: Perform comprehensive data profiling, statistical analysis, and data quality assessment
-- **Visualization**: Create various types of charts and plots using matplotlib, seaborn, and plotly
-- **Data Querying**: Execute complex data filtering, aggregation, and transformation operations
-- **Statistical Insights**: Provide statistical summaries, correlations, and data patterns
-- **Data Quality**: Identify missing values, duplicates, outliers, and data inconsistencies
+# ## Core Capabilities:
+# - **Data Analysis**: Perform comprehensive data profiling, statistical analysis, and data quality assessment
+# - **Visualization**: Create various types of charts and plots using matplotlib, seaborn, and plotly
+# - **Data Querying**: Execute complex data filtering, aggregation, and transformation operations
+# - **Statistical Insights**: Provide statistical summaries, correlations, and data patterns
+# - **Data Quality**: Identify missing values, duplicates, outliers, and data inconsistencies
 
-## Available Tools:
-1. **analyze_csv_data(folder)**: Analyzes a single CSV file in the specified folder and returns comprehensive data profiling including:
-   - File information and data structure
-   - Missing data analysis
-   - Statistical summaries for numeric columns
-   - Categorical data analysis
-   - Sample data preview
-   - Data quality metrics
+# ## Available Tools:
+# 1. **analyze_csv_data(folder)**: Analyzes a single CSV file in the specified folder and returns comprehensive data profiling including:
+#    - File information and data structure
+#    - Missing data analysis
+#    - Statistical summaries for numeric columns
+#    - Categorical data analysis
+#    - Sample data preview
+#    - Data quality metrics
 
-2. **execute_code(script)**: Executes Python code with access to:
-   - pandas, numpy for data manipulation
-   - matplotlib, seaborn, plotly for visualization
-   - scipy, scikit-learn for advanced analytics
-   - All standard Python libraries
+# 2. **execute_code(script)**: Executes Python code with access to:
+#    - pandas, numpy for data manipulation
+#    - matplotlib, seaborn, plotly for visualization
+#    - scipy, scikit-learn for advanced analytics
+#    - All standard Python libraries
 
-## Guidelines:
-- Always start by using `analyze_csv_data` to understand the data structure
-- Provide clear explanations of your analysis and findings
-- Suggest appropriate visualizations based on data types and patterns
-- Help users interpret statistical results and data quality issues
-- Offer actionable insights and recommendations
-- Use best practices for data visualization (appropriate chart types, clear labels, etc.)
-- Handle missing data and outliers appropriately
-- Ensure code is well-commented and reproducible
+# ## Guidelines:
+# - Always start by using `analyze_csv_data` to understand the data structure
+# - Provide clear explanations of your analysis and findings
+# - Suggest appropriate visualizations based on data types and patterns
+# - Help users interpret statistical results and data quality issues
+# - Offer actionable insights and recommendations
+# - Use best practices for data visualization (appropriate chart types, clear labels, etc.)
+# - Handle missing data and outliers appropriately
+# - Ensure code is well-commented and reproducible
 
-## Response Style:
-- Be thorough but concise in explanations
-- Provide context for statistical findings
-- Suggest follow-up analyses when appropriate
-- Explain the significance of data quality issues
-- Offer practical recommendations for data improvement
+# ## Response Style:
+# - Be thorough but concise in explanations
+# - Provide context for statistical findings
+# - Suggest follow-up analyses when appropriate
+# - Explain the significance of data quality issues
+# - Offer practical recommendations for data improvement
 
-Remember: Your goal is to make data analysis accessible and insightful for users of all technical levels."""
+# Remember: Your goal is to make data analysis accessible and insightful for users of all technical levels."""
 
 @mcp.tool
 def analyze_csv_data(folder: str) -> dict:
@@ -90,12 +91,45 @@ def analyze_csv_data(folder: str) -> dict:
         csv_file = csv_files[0]
         print(f"🔍 DEBUG: Using CSV file: {csv_file}")
         
-        # Read the CSV file
+        # Read the CSV file with encoding detection
         try:
             print(f"🔍 DEBUG: Reading CSV file...")
-            df = pd.read_csv(csv_file)
+            
+            # Try multiple encodings in order of preference
+            encodings_to_try = ['utf-8', 'latin-1', 'iso-8859-1', 'cp1252', 'utf-16']
+            df = None
+            encoding_used = None
+            
+            for encoding in encodings_to_try:
+                try:
+                    print(f"🔍 DEBUG: Trying encoding: {encoding}")
+                    df = pd.read_csv(csv_file, encoding=encoding)
+                    encoding_used = encoding
+                    print(f"🔍 DEBUG: Successfully read CSV with encoding: {encoding}")
+                    break
+                except UnicodeDecodeError:
+                    print(f"🔍 DEBUG: Failed with encoding: {encoding}")
+                    continue
+                except Exception as e:
+                    print(f"🔍 DEBUG: Other error with encoding {encoding}: {str(e)}")
+                    continue
+            
+            if df is None:
+                # Try with error handling
+                try:
+                    print(f"🔍 DEBUG: Trying with error handling (ignore)")
+                    df = pd.read_csv(csv_file, encoding='utf-8', errors='ignore')
+                    encoding_used = 'utf-8 (with errors ignored)'
+                    print(f"🔍 DEBUG: Successfully read CSV with error handling")
+                except Exception as e:
+                    error_msg = f"Failed to read CSV file '{csv_file.name}' with any encoding: {str(e)}"
+                    print(f"❌ ERROR: {error_msg}")
+                    return {"error": error_msg}
+            
             print(f"🔍 DEBUG: Successfully read CSV. Shape: {df.shape}")
+            print(f"🔍 DEBUG: Encoding used: {encoding_used}")
             print(f"🔍 DEBUG: Columns: {list(df.columns)}")
+            
         except Exception as e:
             error_msg = f"Failed to read CSV file '{csv_file.name}': {str(e)}"
             print(f"❌ ERROR: {error_msg}")
@@ -105,7 +139,8 @@ def analyze_csv_data(folder: str) -> dict:
         file_info = {
             "filename": csv_file.name,
             "file_size_bytes": csv_file.stat().st_size,
-            "file_path": str(csv_file)
+            "file_path": str(csv_file),
+            "encoding_used": encoding_used
         }
         
         # Data shape and structure
@@ -217,12 +252,14 @@ sns.set_palette("husl")
             temp_path = f.name
         
         # Get the path to the virtual environment's Python interpreter
-        venv_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "venv")
+        # The venv is in the csv_agent project root folder
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        venv_dir = os.path.join(project_root, "venv")
         venv_python = os.path.join(venv_dir, "bin", "python")
         
         # Check if virtual environment exists
         if not os.path.exists(venv_python):
-            return "ERROR: Virtual environment not found. Please run 'python3 -m venv venv' in the coding-agent-mcp directory."
+            return "ERROR: Virtual environment not found. Please run 'python3 -m venv venv' in the project root directory."
         
         # Execute with better error capture using the virtual environment's Python
         result = subprocess.run(
@@ -230,7 +267,7 @@ sns.set_palette("husl")
             capture_output=True, 
             text=True, 
             timeout=300,  # 5 minute timeout
-            cwd=os.path.dirname(os.path.abspath(__file__))  # Set working directory
+            cwd=project_root  # Set working directory to project root
         )
         
         # Clean up temp file
