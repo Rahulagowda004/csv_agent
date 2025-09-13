@@ -1,0 +1,29 @@
+
+
+###  Filter / Sort / Group / Aggregate (Tables or Simple Summaries)
+
+1. *“Show all sales in 2023 for the Consumer segment.”* → **Table** (filtered view).
+2. *“List the top 10 products by total sales.”* → **Table** or **Bar chart**.
+3. *“What is the average revenue per region?”* → **Table**.
+4. *“Show a pivot table of product categories vs regions with total sales.”* → **Pivot Table**.
+5. *“Which 5 products contributed most to total revenue in 2023?”* → **Table** (with % contribution).
+6. *“Show the number of returned units by region.”* → **Table**.
+7. *“What is the profit margin by product category?”* → **Table**.
+8. *“Compare sales in Q1 vs Q2 for each product.”* → **Pivot Table**.
+9. *“Show discounts applied for each channel.”* → **Table** (group by channel).
+10. *“What is the highest-selling SKU in 2023?”* → **Single value / Table**.
+
+
+###  Visualization-First Questions
+
+11. *“Show monthly sales trend for 2023.”* → **Line chart**.
+12. *“Show seasonality of sales by region.”* → **Multi-line chart** (region as series).
+13. *“Which are the top 10 products by revenue?”* → **Bar chart**.
+14. *“What is the revenue contribution of each product category?”* → **Pie or Donut chart**.
+15. *“Compare online vs retail channel sales by quarter.”* → **Grouped bar chart**.
+16. *“Show profit margin by product and region.”* → **Heatmap**.
+17. *“Show the trend of returned units over the last 12 months.”* → **Area chart**.
+18. *“Compare Q1, Q2, Q3, Q4 sales for 2023.”* → **Bar chart**.
+19. *“Show revenue by segment (Consumer, SMB, Enterprise) across regions.”* → **Stacked bar chart**.
+20. *“What is the relationship between unit price and units sold per product?”* → **Scatter plot**.
+
