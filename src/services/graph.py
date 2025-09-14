@@ -468,7 +468,6 @@ def extract_structured_data_from_messages(messages: List[BaseMessage]) -> AgentO
         json_patterns = [
             r'```json\s*(\[.*?\])\s*```',  # Array format
             r'```json\s*(\{.*?\})\s*```',  # Object format
-            r'"product_sales":\s*(\{[^}]+\})',  # Specific product sales pattern
         ]
         
         for pattern in json_patterns:
@@ -476,28 +475,7 @@ def extract_structured_data_from_messages(messages: List[BaseMessage]) -> AgentO
             
             for json_match in json_matches:
                 try:
-                    # Handle different data formats
-                    if json_match.strip().startswith('{') and '"product_sales"' not in json_match:
-                        # Direct object format
-                        result_data = json.loads(json_match)
-                        if isinstance(result_data, dict):
-                            # Convert dict to list of objects
-                            if any(isinstance(v, (int, float)) for v in result_data.values()):
-                                # This looks like product: value mapping
-                                converted_data = []
-                                for key, value in result_data.items():
-                                    converted_data.append({"product_name": key, "units_sold": value})
-                                result_data = converted_data
-                    elif '"product_sales"' in json_match:
-                        # Handle nested product_sales format
-                        parsed = json.loads(f'{{{json_match}}}')
-                        product_sales = parsed.get('product_sales', {})
-                        if product_sales:
-                            result_data = []
-                            for key, value in product_sales.items():
-                                result_data.append({"product_name": key, "units_sold": value})
-                    else:
-                        result_data = json.loads(json_match)
+                    result_data = json.loads(json_match)
                     
                     if isinstance(result_data, list) and len(result_data) > 0:
                         # Determine description based on content
@@ -506,17 +484,22 @@ def extract_structured_data_from_messages(messages: List[BaseMessage]) -> AgentO
                             keys = list(first_item.keys())
                             if 'product_name' in keys and 'units_sold' in keys:
                                 description = f"Top {len(result_data)} Products by Units Sold Analysis"
+                                dataframes.append(DataFrameInfo(
+                                    description=description,
+                                    data=result_data
+                                ))
                             elif 'revenue' in str(keys).lower():
                                 description = f"Revenue Analysis Results ({len(result_data)} items)"
+                                dataframes.append(DataFrameInfo(
+                                    description=description,
+                                    data=result_data
+                                ))
                             elif 'region' in str(keys).lower():
                                 description = f"Regional Analysis Results ({len(result_data)} items)"
-                            else:
-                                description = f"Analysis Results ({len(result_data)} items)"
-                            
-                            dataframes.append(DataFrameInfo(
-                                description=description,
-                                data=result_data
-                            ))
+                                dataframes.append(DataFrameInfo(
+                                    description=description,
+                                    data=result_data
+                                ))
                 except json.JSONDecodeError:
                     continue
     
