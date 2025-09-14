@@ -95,14 +95,18 @@ class UploadResponse(BaseModel):
 class AnalysisRequest(BaseModel):
     query: str
     user_id: str
+    session_id: Optional[str] = None
 
 class AnalysisResponse(BaseModel):
-    result: str
-    user_id: str
-    query: str
-    response_time_seconds: float
-    df_data: Optional[List[Dict[str, Any]]] = None  # DataFrame as list of dictionaries
-    df_shape: Optional[tuple] = None  # Shape of the DataFrame (rows, columns)
+    text: str
+    steps: Optional[List[str]] = None
+    image_paths: Optional[List[str]] = None
+    table_visualization: Optional[List[Dict[str, Any]]] = None
+    suggested_next_steps: Optional[List[str]] = None
+    session_id: str
+    user_id: str  # Include user_id in response
+    response_time_seconds: float  # Response time in seconds
+    csv_file_path: Optional[str] = None  # Path to saved CSV file for large datasets
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest):
@@ -242,30 +246,76 @@ async def csv_analysis_agent(request: AnalysisRequest):
         # Execute the query
         result = agent_executor.invoke({"input": request.query})
         
-        # Extract DataFrame from intermediate steps
-        extracted_df = None
-        if "intermediate_steps" in result:
-            extracted_df = extract_dataframe_from_result(result["intermediate_steps"])
+        # Extract DataFrame from intermediate steps - simplified approach
+        table_visualization = None
+        saved_csv_path = None
         
-        # Prepare DataFrame data for response
-        df_data = None
-        df_shape = None
-        if isinstance(extracted_df, pd.DataFrame):
-            # Convert DataFrame to list of dictionaries for JSON serialization
-            df_data = extracted_df.to_dict('records')
-            df_shape = extracted_df.shape
+        if "intermediate_steps" in result and result["intermediate_steps"]:
+            for step in result["intermediate_steps"]:
+                tool_result = step[1]
+                
+                # Check if the tool result is a DataFrame
+                if isinstance(tool_result, pd.DataFrame):
+                    # If more than 100 rows, save to CSV and limit table_visualization
+                    if len(tool_result) > 100:
+                        # Create user's plots folder to save the CSV
+                        user_plots_folder = os.path.join("data", "plots", request.user_id)
+                        os.makedirs(user_plots_folder, exist_ok=True)
+                        
+                        # Save the full DataFrame as CSV
+                        csv_filename = f"query_result_{int(time.time())}.csv"
+                        csv_path = os.path.join(user_plots_folder, csv_filename)
+                        tool_result.to_csv(csv_path, index=False)
+                        saved_csv_path = csv_path
+                        
+                        # Return only first 50 rows for table_visualization
+                        table_visualization = tool_result.head(50).to_dict('records')
+                        print(f"🔍 DEBUG: Large DataFrame ({len(tool_result)} rows) saved to {csv_path}, showing first 50 rows")
+                    else:
+                        table_visualization = tool_result.to_dict('records')
+                        print(f"🔍 DEBUG: DataFrame with {len(tool_result)} rows returned in full")
+                    break
+                # Check if the tool result is a Series
+                elif isinstance(tool_result, pd.Series):
+                    df_from_series = tool_result.reset_index()
+                    
+                    # If more than 100 rows, save to CSV and limit table_visualization
+                    if len(df_from_series) > 100:
+                        # Create user's plots folder to save the CSV
+                        user_plots_folder = os.path.join("data", "plots", request.user_id)
+                        os.makedirs(user_plots_folder, exist_ok=True)
+                        
+                        # Save the full DataFrame as CSV
+                        csv_filename = f"query_result_{int(time.time())}.csv"
+                        csv_path = os.path.join(user_plots_folder, csv_filename)
+                        df_from_series.to_csv(csv_path, index=False)
+                        saved_csv_path = csv_path
+                        
+                        # Return only first 50 rows for table_visualization
+                        table_visualization = df_from_series.head(50).to_dict('records')
+                        print(f"🔍 DEBUG: Large Series ({len(df_from_series)} rows) saved to {csv_path}, showing first 50 rows")
+                    else:
+                        table_visualization = df_from_series.to_dict('records')
+                        print(f"🔍 DEBUG: Series with {len(df_from_series)} rows returned in full")
+                    break
+        
+        # Generate session_id if not provided
+        session_id = request.session_id or f"analysis_{int(time.time())}_{request.user_id}"
         
         # Calculate response time
         end_time = time.time()
         response_time = end_time - start_time
         
         return AnalysisResponse(
-            result=result['output'],
+            text=result['output'],
+            steps=None,  # Could be populated with intermediate steps if needed
+            image_paths=None,  # Could be populated with generated chart paths
+            table_visualization=table_visualization,
+            suggested_next_steps=None,  # Could be populated with suggestions
+            session_id=session_id,
             user_id=request.user_id,
-            query=request.query,
             response_time_seconds=round(response_time, 2),
-            df_data=df_data,
-            df_shape=df_shape
+            csv_file_path=saved_csv_path
         )
         
     except HTTPException:
