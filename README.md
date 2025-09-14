@@ -1,9 +1,9 @@
 # CSV Agent
 
-Conversational data analysis for your CSV files. Upload a CSV, ask questions in natural language, and get summaries, stats, and plots. Built with FastAPI (backend), Streamlit (frontend), and OpenAI Agent SDK.
+Conversational data analysis for your CSV files. Upload a CSV, ask questions in natural language, and get filtered/sorted/aggregated summaries, stats, and plots. Built with FastAPI (backend), Streamlit (frontend), and OpenAI Agent SDK.
 
 ## Features
-- **CSV Upload**: Per-session isolation with secure file handling (200MB file limit)
+- **CSV Upload**: Per-session isolation with secure file handling 
 - **Natural Language Queries**: Chat interface to query your data and receive text answers and visualizations
 - **Automatic EDA**: Summary statistics, column profiling, filtering, grouping, and correlations
 - **Dynamic Visualizations**: Plot generation using Matplotlib, Seaborn, and Plotly
@@ -16,6 +16,9 @@ Conversational data analysis for your CSV files. Upload a CSV, ask questions in 
 - **Export Capabilities**: Download processed CSV files and generated plots
 - **REST API**: Full API documentation with Swagger/Redoc interface
 
+## Demo Video
+
+
 ## Tech Stack
 - **Backend**: FastAPI, OpenAI Agents SDK, Uvicorn, Pandas, NumPy, Scikit-learn, SciPy
 - **Visualization**: Seaborn, Matplotlib, Plotly
@@ -24,6 +27,11 @@ Conversational data analysis for your CSV files. Upload a CSV, ask questions in 
 - **Database**: SQLite (for conversation memory)
 - **Configuration**: python-dotenv
 - **Python Version**: 3.12+
+
+## System Architecture
+
+![System Architecture](assets/mermaid.png)
+
 
 ## Repository Structure
 ```
@@ -35,10 +43,9 @@ csv_agent/
 │   │   └── plots/             # Generated visualizations by session
 │   ├── memory/                # SQLite conversation database
 │   ├── src/                   # Core application modules
-│   │   ├── agent/             # AI agent logic
-│   │   ├── services/          # Business logic services
-│   │   ├── constants/         # Application constants
-│   │   └── core/              # Core utilities
+│   │   ├── services/          # AI agent logic services
+│   │   ├── constants/         # Application properties, prompt
+│   │   └── core/              # Core utilities(tools)
 │   ├── requirements.txt
 │   └── pyproject.toml
 ├── frontend/
@@ -158,7 +165,13 @@ curl -X POST "http://localhost:8000/chat" \
   -H "Content-Type: application/json" \
   -d '{"message": "Show me the summary statistics", "session_id": "your-session-id"}'
 ```
+## Sample Questions
 
+1. List the top 10 products by total sales
+2. What is the profit margin by product category
+3. Compare Q1, Q2, Q3, Q4 sales for 2023.
+4. Show monthly sales trend for 2023.
+5. What is the capital of India
 ## Troubleshooting
 
 ### Common Issues
