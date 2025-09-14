@@ -31,37 +31,175 @@ def main():
     # Initialize chat interface
     chat_interface = ChatInterface(api_client)
     
-    # Add custom CSS for better styling
+    # Add custom CSS for white, black, and orange color scheme
     st.markdown("""
     <style>
+    /* Main layout */
     .main > div {
         padding-top: 2rem;
+        background-color: white;
     }
+    
+    /* Sidebar styling */
+    .css-1d391kg, .css-1cypcdb, .stSidebar {
+        background-color: white !important;
+        border-right: 2px solid #e0e0e0;
+    }
+    
+    /* Sidebar content */
+    .css-1d391kg .css-1cypcdb, .stSidebar .sidebar-content {
+        background-color: white !important;
+    }
+    
+    /* Buttons */
     .stButton > button {
         width: 100%;
+        background-color: black;
+        color: white;
+        border: 2px solid black;
+        border-radius: 8px;
+        font-weight: 600;
+        transition: all 0.3s ease;
     }
+    
+    .stButton > button:hover {
+        background-color: #333333;
+        border-color: #333333;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+    }
+    
+    /* Chat messages */
     .chat-message {
         padding: 1rem;
-        border-radius: 0.5rem;
+        border-radius: 12px;
         margin-bottom: 1rem;
+        border: 1px solid #e0e0e0;
     }
+    
     .user-message {
-        background-color: #e3f2fd;
+        background-color: black;
+        color: white;
+        border-color: black;
     }
+    
     .bot-message {
-        background-color: #f5f5f5;
+        background-color: white;
+        color: black;
+        border-color: #e0e0e0;
     }
+    
+    /* Upload section - simplified */
     .upload-section {
-        background-color: #f8f9fa;
-        padding: 1rem;
-        border-radius: 0.5rem;
+        margin-bottom: 2rem;
+    }
+    
+    /* Titles and headers */
+    h1 {
+        text-align: center;
+        margin-bottom: 2rem;
+        margin-top: 1rem;
+        color: black;
+        font-weight: 700;
+    }
+    
+    h2 {
+        color: black;
+        border-bottom: 2px solid #e0e0e0;
+        padding-bottom: 0.5rem;
+    }
+    
+    h3 {
+        color: black;
+        text-align: center;
+    }
+    
+    /* Spacing */
+    .element-container:has(h1) {
+        margin-bottom: 3rem;
+    }
+    
+    .element-container:has(h3) {
+        margin-top: 2rem;
+        margin-bottom: 1.5rem;
+        text-align: center;
+    }
+    
+    .stTextInput {
         margin-bottom: 1rem;
+    }
+    
+    .stButton {
+        margin-top: 1rem;
+    }
+    
+    /* Input fields */
+    .stTextInput > div > div > input {
+        border: 2px solid #e0e0e0;
+        border-radius: 8px;
+        padding: 0.5rem;
+    }
+    
+    .stTextInput > div > div > input:focus {
+        border-color: black;
+        box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.2);
+    }
+    
+    /* Chat input */
+    .stChatInput > div > div > div > div {
+        border: 2px solid #e0e0e0;
+        border-radius: 12px;
+    }
+    
+    /* Expander styling */
+    .streamlit-expanderHeader {
+        background-color: black;
+        color: white;
+        border-radius: 8px 8px 0 0;
+    }
+    
+    .streamlit-expanderContent {
+        background-color: white;
+        border: 1px solid #e0e0e0;
+        border-top: none;
+        border-radius: 0 0 8px 8px;
+    }
+    
+    /* Success/Error messages */
+    .stSuccess {
+        background-color: #d4edda;
+        border: 1px solid #c3e6cb;
+        color: #155724;
+    }
+    
+    .stError {
+        background-color: #f8d7da;
+        border: 1px solid #f5c6cb;
+        color: #721c24;
+    }
+    
+    /* Dataframe styling */
+    .dataframe {
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+    }
+    
+    /* Caption styling */
+    .stCaption {
+        color: #666;
+    }
+    
+    /* Metric styling */
+    .metric-container {
+        background-color: white;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        padding: 1rem;
     }
     </style>
     """, unsafe_allow_html=True)
     
-    # Main title
-    st.title("🤖 CSV Analysis Chat Agent")
+    # Main title removed for cleaner interface
     
     # Check API health
     print(f"🔍 Frontend: Checking API health at {API_BASE_URL}")
@@ -72,7 +210,6 @@ def main():
         return
     
     print("✅ Frontend: API server is healthy")
-    st.success("✅ Connected to API server")
     
     # Render authentication section
     if not chat_interface.is_authenticated():
@@ -84,6 +221,9 @@ def main():
     
     # Render file upload section
     render_file_upload_section(chat_interface)
+    
+    # Add some spacing
+    st.markdown("<br>", unsafe_allow_html=True)
     
     # Render main chat interface
     chat_interface.render_chat()

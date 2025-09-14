@@ -62,22 +62,27 @@ def display_images_grid_in_sidebar(image_paths: List[str]):
                     
                     if os.path.exists(full_image_path):
                         image = Image.open(full_image_path)
-                        # Resize image to be smaller for sidebar (max width 120px)
-                        image.thumbnail((120, 120), Image.Resampling.LANCZOS)
+                        # Resize image to be smaller for sidebar (max width 100px)
+                        image.thumbnail((100, 100), Image.Resampling.LANCZOS)
                         
                         # Create a unique key for this image
                         image_key = f"sidebar_image_{i}_{j}"
                         
-                        # Show thumbnail in grid with clickable button
-                        col1, col2 = st.columns([3, 1])
-                        with col1:
-                            st.image(image, use_container_width=True)
-                        with col2:
-                            if st.button("🔍", key=f"zoom_{image_key}", help="Click to enlarge"):
-                                # Store the full image path in session state for popup
-                                st.session_state["popup_image"] = full_image_path
-                                st.session_state["popup_image_name"] = os.path.basename(image_path)
-                                st.rerun()
+                        # Show thumbnail with sleek styling
+                        st.markdown(f"""
+                        <div style='border: 1px solid #e0e0e0; border-radius: 8px; padding: 0.3rem; margin: 0.2rem 0; background-color: white;'>
+                        """, unsafe_allow_html=True)
+                        
+                        st.image(image, use_container_width=True)
+                        
+                        # Add zoom button below image
+                        if st.button("🔍 Enlarge", key=f"zoom_{image_key}", help="Click to enlarge"):
+                            # Store the full image path in session state for popup
+                            st.session_state["popup_image"] = full_image_path
+                            st.session_state["popup_image_name"] = os.path.basename(image_path)
+                            st.rerun()
+                        
+                        st.markdown("</div>", unsafe_allow_html=True)
                     else:
                         st.error(f"Image not found: {full_image_path}")
                 except Exception as e:
@@ -90,63 +95,66 @@ def render_sidebar_content(chat_interface: 'ChatInterface'):
         chat_interface: ChatInterface instance for accessing response data
     """
     with st.sidebar:
-        st.header("🛠️ CSV Analysis Agent")
-        st.write("Upload your CSV file and start asking questions about your data!")
+        # Add custom styling for sidebar
+        st.markdown("""
+        <style>
+        .sidebar .sidebar-content {
+            background-color: white !important;
+        }
+        .sidebar .sidebar-content h1, .sidebar .sidebar-content h2, .sidebar .sidebar-content h3 {
+            color: black;
+        }
+        .sidebar .sidebar-content .stButton > button {
+            background-color: black;
+            color: white;
+            border: 2px solid black;
+        }
+        .sidebar .sidebar-content .stButton > button:hover {
+            background-color: #333333;
+            border-color: #333333;
+        }
+        </style>
+        """, unsafe_allow_html=True)
         
-        # User info and session management
+        st.header("CSV Analysis Agent")
+        
+        # User info
         if chat_interface.is_authenticated():
             user_info = chat_interface.get_user_info()
             st.write(f"**Logged in as:** {user_info['username']}")
-            if st.button("🔄 Reset Session"):
-                chat_interface.clear_session()
-                st.rerun()
-        
-        st.markdown("---")
         
         # Response details section
         response_data = chat_interface.get_current_response()
         if response_data:
-            st.header("Response Details")
+            st.markdown("### 📋 Response Details")
             
-            # Steps section
+            # Steps section - sleek display
             if response_data.get("steps"):
-                with st.expander("🔄 Processing Steps", expanded=False):
-                    for i, step in enumerate(response_data["steps"], 1):
-                        st.write(f"{i}. {step}")
+                st.markdown("**🔄 Processing Steps:**")
+                for i, step in enumerate(response_data["steps"], 1):
+                    st.markdown(f"<div style='background-color: #f8f9fa; padding: 0.5rem; margin: 0.3rem 0; border-radius: 6px; border-left: 3px solid #007bff;'><strong>{i}.</strong> {step}</div>", unsafe_allow_html=True)
+                st.markdown("<br>", unsafe_allow_html=True)
             
-            # Suggested next steps
-            if response_data.get("suggested_next_steps"):
-                with st.expander("💡 Suggested Next Steps", expanded=False):
-                    for i, suggestion in enumerate(response_data["suggested_next_steps"], 1):
-                        if st.button(f"{i}. {suggestion}", key=f"suggestion_{i}"):
-                            # Add the suggestion to the chat input
-                            st.session_state.suggested_message = suggestion
-                            st.rerun()
-            
-            # Table visualization
+            # Table visualization - improved display
             if response_data.get("table_visualization"):
-                with st.expander("📊 Table Data", expanded=False):
-                    table_data = response_data["table_visualization"]
-                    if isinstance(table_data, list):
-                        # Convert list of dictionaries to DataFrame for better display
-                        import pandas as pd
-                        df = pd.DataFrame(table_data)
-                        st.dataframe(df, use_container_width=True)
-                    elif isinstance(table_data, dict):
-                        st.json(table_data)
-                    else:
-                        st.write(table_data)
+                st.markdown("**📊 Table Data:**")
+                table_data = response_data["table_visualization"]
+                if isinstance(table_data, list):
+                    # Convert list of dictionaries to DataFrame for better display
+                    import pandas as pd
+                    df = pd.DataFrame(table_data)
+                    st.dataframe(df, use_container_width=True, height=200)
+                elif isinstance(table_data, dict):
+                    st.json(table_data)
+                else:
+                    st.write(table_data)
+                st.markdown("<br>", unsafe_allow_html=True)
             
-            # Images section
+            # Images section - sleek display
             if response_data.get("image_paths"):
-                with st.expander("📈 Generated Visualizations", expanded=True):
-                    display_images_grid_in_sidebar(response_data["image_paths"])
+                st.markdown("**📈 Generated Visualizations:**")
+                display_images_grid_in_sidebar(response_data["image_paths"])
             
-            # Session info
-            with st.expander("ℹ️ Session Info", expanded=False):
-                st.write(f"**User ID:** {response_data.get('user_id', 'N/A')}")
-                st.write(f"**Session ID:** {response_data.get('session_id', 'N/A')}")
-        
         st.markdown("---")
         
         # Usage instructions
@@ -158,11 +166,4 @@ def render_sidebar_content(chat_interface: 'ChatInterface'):
         4. View detailed responses in the sidebar
         5. Click on suggested questions for more insights
         """)
-        
-        # API connection status
-        st.markdown("### 🔗 Connection Status:")
-        if hasattr(chat_interface, 'api_client') and chat_interface.api_client.check_health():
-            st.success("✅ Connected to API")
-        else:
-            st.error("❌ API Disconnected")
     

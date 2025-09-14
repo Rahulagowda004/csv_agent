@@ -14,9 +14,8 @@ Conversational data analysis for your CSV files. Upload a CSV, ask questions in 
 - **Smart Error Handling**: Graceful handling of visualization errors with alternative suggestions
 - **Persistent Memory**: Conversational context and chat history stored in SQLite database
 - **Export Capabilities**: Download processed CSV files and generated plots
-- **REST API**: Full API documentation with Swagger/Redoc interface
 
-## Demo Video
+<!-- ## Demo Video -->
 
 
 ## Tech Stack
@@ -28,9 +27,16 @@ Conversational data analysis for your CSV files. Upload a CSV, ask questions in 
 - **Configuration**: python-dotenv
 - **Python Version**: 3.12+
 
+
 ## System Architecture
 
-![System Architecture](assets/mermaid.png)
+![System Architecture](assets/system_architecture.png)
+
+## Agent Architecture
+
+![Agent Architecture](assets/agent_architecture.png)
+
+
 
 
 ## Repository Structure
@@ -165,14 +171,7 @@ curl -X POST "http://localhost:8000/chat" \
   -H "Content-Type: application/json" \
   -d '{"message": "Show me the summary statistics", "session_id": "your-session-id"}'
 ```
-## Sample Questions
 
-1. List the top 10 products by total sales
-2. What is the profit margin by product category
-3. Compare Q1, Q2, Q3, Q4 sales for 2023.
-4. Show monthly sales trend for 2023.
-5. What is the capital of India
-## Troubleshooting
 
 ### Common Issues
 1. **Python Version**: Ensure you're using Python 3.12+

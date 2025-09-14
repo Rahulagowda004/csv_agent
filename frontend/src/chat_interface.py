@@ -34,6 +34,10 @@ class ChatInterface:
             st.session_state.current_response = None
         if 'username' not in st.session_state:
             st.session_state.username = ""
+        if 'file_uploaded' not in st.session_state:
+            st.session_state.file_uploaded = False
+        if 'uploaded_filename' not in st.session_state:
+            st.session_state.uploaded_filename = None
     
     def generate_user_id(self, username: str) -> str:
         """Generate a unique user ID based on username and UUID.
@@ -376,10 +380,88 @@ class ChatInterface:
     
     def render_chat(self):
         """Render the main chat interface."""
-        st.subheader("💬 Chat History")
+        # Add custom styling for chat interface
+        st.markdown("""
+        <style>
+        /* Chat message styling */
+        .stChatMessage {
+            border-radius: 12px;
+            margin-bottom: 1rem;
+        }
+        
+        /* User message styling */
+        .stChatMessage[data-testid="user"] {
+            background-color: black;
+            color: white;
+            border: 2px solid black;
+        }
+        
+        /* Assistant message styling */
+        .stChatMessage[data-testid="assistant"] {
+            background-color: white;
+            color: black;
+            border: 2px solid #e0e0e0;
+        }
+        
+        /* Chat input styling */
+        .stChatInput > div > div > div > div {
+            border: 2px solid #e0e0e0;
+            border-radius: 12px;
+            background-color: white;
+        }
+        
+        /* Chat input focus */
+        .stChatInput > div > div > div > div:focus-within {
+            border-color: black;
+            box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.2);
+        }
+        
+        /* Spinner styling */
+        .stSpinner > div {
+            border-top-color: black;
+        }
+        
+        /* Suggestion buttons styling - small and compact */
+        .stButton > button[data-testid*="chat_suggestion"] {
+            background-color: #f8f9fa !important;
+            color: #495057 !important;
+            border: 1px solid #dee2e6 !important;
+            border-radius: 6px !important;
+            font-size: 0.8rem !important;
+            padding: 0.3rem 0.6rem !important;
+            margin: 0.2rem !important;
+            transition: all 0.2s ease !important;
+            height: auto !important;
+            min-height: 32px !important;
+        }
+        
+        .stButton > button[data-testid*="chat_suggestion"]:hover {
+            background-color: #e9ecef !important;
+            border-color: #adb5bd !important;
+            transform: translateY(-1px) !important;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+        }
+        
+        /* Reduce spacing around suggestion buttons */
+        .element-container:has(button[data-testid*="chat_suggestion"]) {
+            margin-top: 0.5rem !important;
+            margin-bottom: 0.5rem !important;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        
+        # Show uploaded file status if available
+        if hasattr(st.session_state, 'file_uploaded') and st.session_state.file_uploaded:
+            filename = st.session_state.get('uploaded_filename', 'Unknown file')
+            st.success(f"📁 Ready to analyze: **{filename}**")
         
         # Display chat history
         chat_history = self.get_chat_history()
+        
+        # Only show chat history header if there are messages
+        if chat_history:
+            st.subheader("💬 Chat History")
+        
         for i, (user_msg, bot_response) in enumerate(chat_history):
             # User message
             with st.chat_message("user"):
@@ -406,10 +488,29 @@ class ChatInterface:
                     with col2:
                         st.caption(f"⏱️ {response_time}s", help="Response time")
         
+        # Show suggested next steps if available
+        if chat_history:
+            latest_response = chat_history[-1][1]  # Get the latest bot response
+            if latest_response.get("suggested_next_steps"):
+                # Create horizontal layout for suggestions with minimal spacing
+                suggestions = latest_response["suggested_next_steps"]
+                cols = st.columns(len(suggestions))
+                
+                for i, suggestion in enumerate(suggestions):
+                    with cols[i]:
+                        if st.button(
+                            suggestion, 
+                            key=f"chat_suggestion_{i}",
+                            help=f"Click to ask: {suggestion}"
+                        ):
+                            # Add the suggestion to the chat input
+                            st.session_state.suggested_message = suggestion
+                            st.rerun()
+        
         # Chat input
         message_input = st.chat_input("Ask me anything about your CSV data...")
         
-        # Handle suggested message from sidebar
+        # Handle suggested message from suggested next steps
         if hasattr(st.session_state, 'suggested_message'):
             message_input = st.session_state.suggested_message
             delattr(st.session_state, 'suggested_message')
