@@ -252,9 +252,9 @@ class DataFrameInfo(BaseModel):
     data: List[Dict[str, Any]] = Field(..., description="Sample rows from the dataframe")
 
 class AgentOutput(BaseModel):
-    """Unified structured output for CSV agent responses with titles for images."""
+    """Unified structured output for CSV agent responses with step-by-step process tracking."""
     
-    response: str = Field(..., description="Main textual response or analysis summary")
+    steps: List[str] = Field(..., description="Step-by-step process of how the analysis was conducted")
     
     images: List[ImageInfo] = Field(
         default_factory=list,
@@ -407,10 +407,16 @@ def generate_structured_output(state: State) -> State:
     
     # Create a prompt to generate structured output from the conversation
     summary_prompt = """Based on the above conversation and analysis, generate a structured summary that includes:
-    1. Main response/analysis summary
+    1. Step-by-step process of how the analysis was conducted (list each major step taken)
     2. List of generated images with titles and paths (look for .png files mentioned)
     3. Dataframe information with description and sample data from the CSV analysis
     4. Actionable suggestions
+    
+    For steps, break down the analysis process into clear sequential steps like:
+    - "Step 1: Loaded and examined CSV data structure"
+    - "Step 2: Performed statistical analysis of numerical columns"
+    - "Step 3: Generated visualizations for revenue by region"
+    - etc.
     
     For dataframes, include:
     - A description of the dataset (mention it has 6,199 rows and 19 columns with sales data)
@@ -488,7 +494,9 @@ def print_stream_with_structured_output(stream):
         print("\n" + "="*80)
         print("📊 STRUCTURED OUTPUT")
         print("="*80)
-        print(f"📝 Response: {structured.response[:200]}..." if len(structured.response) > 200 else f"📝 Response: {structured.response}")
+        print(f"� Analysis Steps ({len(structured.steps)}):")
+        for i, step in enumerate(structured.steps, 1):
+            print(f"  {i}. {step}")
         
         if structured.images:
             print(f"\n🖼️ Generated Images ({len(structured.images)}):")
