@@ -97,8 +97,8 @@ def main():
         st.markdown("---")
         st.markdown("### 🔍 Enlarged Image View")
         
-        # Close button at the top
-        col1, col2, col3 = st.columns([1, 1, 1])
+        # Close button positioned at the top right
+        col1, col2, col3 = st.columns([4, 1, 1])
         with col3:
             if st.button("❌ Close", key="close_main_popup", help="Close enlarged view", type="primary"):
                 del st.session_state["popup_image"]
@@ -120,14 +120,6 @@ def main():
             
             # Add spacing after image
             st.markdown("<br>", unsafe_allow_html=True)
-            
-            # Another close button at the bottom
-            col1, col2, col3 = st.columns([2, 1, 2])
-            with col2:
-                if st.button("Close", key="close_main_popup_bottom", help="Close enlarged view", type="secondary"):
-                    del st.session_state["popup_image"]
-                    del st.session_state["popup_image_name"]
-                    st.rerun()
             
             st.markdown("---")
                 

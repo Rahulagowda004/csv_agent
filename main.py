@@ -115,28 +115,35 @@ async def upload_csv(user_id: str, file: UploadFile = File(...)):
         # Reset file pointer
         await file.seek(0)
         
-        # Create user CSV folder using the same logic as CSVAgentService
-        # This returns data/csv/user_id/ folder path
-        user_csv_folder = csv_agent_service._create_user_folder(user_id)
+        # Create a temporary file to save the uploaded content
+        import tempfile
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.csv') as temp_file:
+            temp_file_path = temp_file.name
+            shutil.copyfileobj(file.file, temp_file)
         
-        # Remove any existing CSV files in the user's CSV folder (only one CSV per user)
-        for existing_file in os.listdir(user_csv_folder):
-            if existing_file.lower().endswith('.csv'):
-                os.remove(os.path.join(user_csv_folder, existing_file))
-        
-        # Save the uploaded file
-        file_path = os.path.join(user_csv_folder, file.filename)
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-        
-        # Get file size
-        file_size = os.path.getsize(file_path)
+        try:
+            # Use CSVAgentService to standardize the filename to "data.csv"
+            print(f"🔍 DEBUG: Uploading file for user_id: {user_id}")
+            standardized_path = csv_agent_service.upload_csv_file(temp_file_path, user_id)
+            print(f"🔍 DEBUG: File saved to: {standardized_path}")
+            
+            # Verify the file exists
+            if not os.path.exists(standardized_path):
+                raise HTTPException(status_code=500, detail=f"File was not saved correctly to {standardized_path}")
+            
+            # Get file size
+            file_size = os.path.getsize(standardized_path)
+            print(f"🔍 DEBUG: File size: {file_size} bytes")
+        finally:
+            # Clean up temporary file
+            if os.path.exists(temp_file_path):
+                os.remove(temp_file_path)
         
         return UploadResponse(
             message="File uploaded successfully",
             user_id=user_id,
-            filename=file.filename,
-            file_path=file_path,
+            filename="data.csv",  # Standardized filename
+            file_path=standardized_path,
             file_size=file_size
         )
         

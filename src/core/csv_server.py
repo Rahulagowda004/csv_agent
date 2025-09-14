@@ -1,15 +1,16 @@
 # server.py
-from fastmcp import FastMCP
+import json
 from pathlib import Path
-import os, subprocess, tempfile, json
+import os, subprocess, tempfile
 import pandas as pd
 import numpy as np
 from dotenv import load_dotenv
+from typing_extensions import TypedDict, Any
+from agents import Agent, FunctionTool, RunContextWrapper, function_tool
 
 # Load environment variables from .env file in project root
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 load_dotenv(os.path.join(project_root, '.env'))
-mcp = FastMCP("CSV-Data-Analysis")
 
 # # ── tools ────────────────────────────────────────────────────────────
 
@@ -59,7 +60,7 @@ mcp = FastMCP("CSV-Data-Analysis")
 
 # Remember: Your goal is to make data analysis accessible and insightful for users of all technical levels."""
 
-@mcp.tool
+@function_tool
 def analyze_csv_data(user_folder: str) -> dict:
     """Analyze CSV data from the user's folder. Reads the single CSV file and provides comprehensive data profiling."""
     print(f"🔍 DEBUG: analyze_csv_data called for user folder: {user_folder}")
@@ -193,6 +194,32 @@ def analyze_csv_data(user_folder: str) -> dict:
             "last_5_rows": df.tail().to_dict('records')
         }
         
+        # Zero values analysis
+        zero_values_analysis = {}
+        for col in df.columns:
+            if df[col].dtype in ['int64', 'int32', 'float64', 'float32']:
+                # For numeric columns, count actual zeros
+                zero_count = int((df[col] == 0).sum())
+                zero_percentage = float((zero_count / len(df)) * 100) if len(df) > 0 else 0.0
+                zero_values_analysis[col] = {
+                    "zero_count": zero_count,
+                    "zero_percentage": round(zero_percentage, 2),
+                    "has_zeros": zero_count > 0
+                }
+            elif df[col].dtype == 'object':
+                # For string columns, count empty strings and "0" strings
+                empty_count = int((df[col] == '').sum())
+                zero_string_count = int((df[col] == '0').sum())
+                total_zero_like = empty_count + zero_string_count
+                zero_percentage = float((total_zero_like / len(df)) * 100) if len(df) > 0 else 0.0
+                zero_values_analysis[col] = {
+                    "empty_string_count": empty_count,
+                    "zero_string_count": zero_string_count,
+                    "total_zero_like_count": total_zero_like,
+                    "zero_percentage": round(zero_percentage, 2),
+                    "has_zeros": total_zero_like > 0
+                }
+        
         # Data quality summary
         quality_summary = {
             "has_duplicates": bool(df.duplicated().any()),
@@ -206,6 +233,7 @@ def analyze_csv_data(user_folder: str) -> dict:
             "missing_data": missing_data,
             "numeric_statistics": numeric_stats,
             "categorical_statistics": categorical_stats,
+            "zero_values_analysis": zero_values_analysis,
             "sample_data": sample_data,
             "quality_summary": quality_summary,
             "analysis_timestamp": pd.Timestamp.now().isoformat()
@@ -222,7 +250,7 @@ def analyze_csv_data(user_folder: str) -> dict:
         traceback.print_exc()
         return {"error": error_msg}
 
-@mcp.tool
+@function_tool
 def manipulate_table(script: str) -> str:
     """Execute Python script for table manipulation operations. Returns JSON with processed data."""
     try:
@@ -275,7 +303,7 @@ warnings.filterwarnings('ignore')
     except Exception as e:
         return f"ERROR: Failed to execute table manipulation: {str(e)}"
 
-@mcp.tool
+@function_tool
 def create_visualization(script: str) -> str:
     """Execute Python script for creating visualizations and charts. Returns execution output."""
     try:
@@ -341,7 +369,7 @@ sns.set_palette("husl")
     except Exception as e:
         return f"ERROR: Failed to execute visualization: {str(e)}"
 
-@mcp.tool
+@function_tool
 def execute_code(script: str) -> str:
     """Execute Python script for data analysis and visualization with comprehensive data science libraries."""
     try:
@@ -412,5 +440,17 @@ sns.set_palette("husl")
         return f"ERROR: Failed to execute script: {str(e)}"
 
 
+# Create the agent with all tools
+agent = Agent(
+    name="CSV-Data-Analysis",
+    tools=[analyze_csv_data, manipulate_table, create_visualization, execute_code],
+)
+
+# Print tool information for debugging
 if __name__ == "__main__":
-    mcp.run()
+    for tool in agent.tools:
+        if isinstance(tool, FunctionTool):
+            print(f"Tool: {tool.name}")
+            print(f"Description: {tool.description}")
+            print(f"Schema: {json.dumps(tool.params_json_schema, indent=2)}")
+            print()
