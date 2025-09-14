@@ -17,9 +17,9 @@ Conversational data analysis for your CSV files. Upload a CSV, ask questions in 
 
 ## Demo Video
 
-[![CSV Agent Demo](https://img.youtube.com/vi/W82CkTKJWc4/0.jpg)](https://youtu.be/W82CkTKJWc4)
+[![CSV Agent Demo](https://img.youtube.com/vi/M8gu-qvO2ZI/0.jpg)](https://youtu.be/M8gu-qvO2ZI)
 
-Watch the demo: [https://youtu.be/W82CkTKJWc4](https://youtu.be/W82CkTKJWc4)
+Watch the demo: [https://youtu.be/M8gu-qvO2ZI](https://youtu.be/M8gu-qvO2ZI)
 
 
 ## Tech Stack
