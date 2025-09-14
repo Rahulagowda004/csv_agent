@@ -263,19 +263,8 @@ class ChatInterface:
             frontend_dir = os.path.dirname(current_file_dir)  # frontend/
             project_root = os.path.dirname(frontend_dir)  # project root
             
-            # Handle different path formats from backend
-            if os.path.isabs(image_path):
-                # Absolute path - use as is
-                full_image_path = image_path
-            elif image_path.startswith('data/plots/'):
-                # Backend sends paths like "data/plots/user_id/image.png" - prepend project root
-                full_image_path = os.path.join(project_root, image_path)
-            elif image_path.startswith('backend/data/plots/'):
-                # Backend might send paths like "backend/data/plots/user_id/image.png" - prepend project root
-                full_image_path = os.path.join(project_root, image_path)
-            else:
-                # Fallback - treat as relative to project root
-                full_image_path = os.path.join(project_root, image_path)
+            # Backend now sends absolute paths, so use directly
+            full_image_path = image_path
             
             print(f"🖼️ Frontend: Full image path: {full_image_path}")
             print(f"🖼️ Frontend: Image exists: {os.path.exists(full_image_path)}")
@@ -311,14 +300,8 @@ class ChatInterface:
             for j, image_path in enumerate(row_images):
                 with cols[j]:
                     try:
-                        # Convert relative path to absolute path from project root
-                        if not os.path.isabs(image_path):
-                            current_file_dir = os.path.dirname(os.path.abspath(__file__))
-                            frontend_dir = os.path.dirname(current_file_dir)
-                            project_root = os.path.dirname(frontend_dir)
-                            full_image_path = os.path.join(project_root, image_path)
-                        else:
-                            full_image_path = image_path
+                        # Backend now sends absolute paths, so use directly
+                        full_image_path = image_path
                         
                         if os.path.exists(full_image_path):
                             image = Image.open(full_image_path)
@@ -364,14 +347,8 @@ class ChatInterface:
             for j, image_path in enumerate(row_images):
                 with cols[j]:
                     try:
-                        # Convert relative path to absolute path from project root
-                        if not os.path.isabs(image_path):
-                            current_file_dir = os.path.dirname(os.path.abspath(__file__))
-                            frontend_dir = os.path.dirname(current_file_dir)
-                            project_root = os.path.dirname(frontend_dir)
-                            full_image_path = os.path.join(project_root, image_path)
-                        else:
-                            full_image_path = image_path
+                        # Backend now sends absolute paths, so use directly
+                        full_image_path = image_path
                         
                         if os.path.exists(full_image_path):
                             image = Image.open(full_image_path)

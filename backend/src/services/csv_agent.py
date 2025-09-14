@@ -1,4 +1,4 @@
-# OpenAI Agents SDK CSV Analysis Agent Service
+ # OpenAI Agents SDK CSV Analysis Agent Service
 import asyncio
 import os
 import json
@@ -36,6 +36,15 @@ class CSVAgentService:
         self.db_path = None
         self.sessions = {}  # Store active sessions
         
+        # Set up folder paths from environment variables
+        self.project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+        self.csv_data_folder = os.getenv("CSV_DATA_FOLDER", "backend/data/csv")
+        self.plots_folder = os.getenv("PLOTS_FOLDER", "backend/data/plots")
+        
+        print(f"🔍 DEBUG: Project root: {self.project_root}")
+        print(f"🔍 DEBUG: CSV data folder: {self.csv_data_folder}")
+        print(f"🔍 DEBUG: Plots folder: {self.plots_folder}")
+        
     def _create_user_folder(self, user_id: str) -> str:
         """
         Create user-specific folders for CSV data and visualizations.
@@ -44,11 +53,8 @@ class CSVAgentService:
             user_id: User identifier
             
         Returns:
-            Path to the user's CSV folder (data/csv/user_id/)
+            Path to the user's CSV folder
         """
-        # Get project root directory
-        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-        print(f"🔍 DEBUG: Project root: {project_root}")
         print(f"🔍 DEBUG: Original user_id: {user_id}")
         
         # Create user folder path (sanitize user_id for filesystem)
@@ -58,9 +64,9 @@ class CSVAgentService:
         
         print(f"🔍 DEBUG: Sanitized user_id: {safe_user_id}")
         
-        # Create separate folders for CSV files and plots
-        csv_folder = os.path.join(project_root, "data", "csv", safe_user_id)
-        plots_folder = os.path.join(project_root, "data", "plots", safe_user_id)
+        # Create separate folders for CSV files and plots using environment variables
+        csv_folder = os.path.join(self.project_root, self.csv_data_folder, safe_user_id)
+        plots_folder = os.path.join(self.project_root, self.plots_folder, safe_user_id)
         
         print(f"🔍 DEBUG: CSV folder path: {csv_folder}")
         print(f"🔍 DEBUG: Plots folder path: {plots_folder}")
@@ -156,8 +162,10 @@ class CSVAgentService:
             agent_instructions = f"""{CSV_AGENT_SYSTEM_PROMPT}
 
 **IMPORTANT - Your user folder: {user_id}**
-- CSV data: `data/csv/{user_id}/data.csv`
-- Save plots: `data/plots/{user_id}/`"""
+- Project root: `{self.project_root}`
+- CSV data: `{self.csv_data_folder}/{user_id}/data.csv`
+- Save plots: `{self.plots_folder}/{user_id}/`
+- Full plot paths: `{self.project_root}/{self.plots_folder}/{user_id}/`"""
             
             # Create agent with tools from csv_server
             agent = Agent(
