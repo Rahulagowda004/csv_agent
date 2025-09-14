@@ -12,6 +12,9 @@ from agents import Agent, FunctionTool, RunContextWrapper, function_tool
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 load_dotenv(os.path.join(project_root, '.env'))
 
+# Environment variable for virtual environment path
+# VENV_DIR: Path to the virtual environment directory (defaults to backend/venv)
+
 
 @function_tool
 def analyze_csv_data(user_folder: str) -> dict:
@@ -225,7 +228,7 @@ warnings.filterwarnings('ignore')
         
         # Execute using virtual environment
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-        venv_dir = os.path.join(project_root, "backend", "venv")
+        venv_dir = os.getenv('VENV_DIR', os.path.join(project_root, "backend", "venv"))
         venv_python = os.path.join(venv_dir, "bin", "python")
         
         if not os.path.exists(venv_python):
@@ -291,7 +294,7 @@ sns.set_palette("husl")
         
         # Execute using virtual environment
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-        venv_dir = os.path.join(project_root, "backend", "venv")
+        venv_dir = os.getenv('VENV_DIR', os.path.join(project_root, "backend", "venv"))
         venv_python = os.path.join(venv_dir, "bin", "python")
         
         if not os.path.exists(venv_python):
@@ -358,7 +361,7 @@ sns.set_palette("husl")
         # Get the path to the virtual environment's Python interpreter
         # The venv is in the csv_agent project root folder
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-        venv_dir = os.path.join(project_root, "backend", "venv")
+        venv_dir = os.getenv('VENV_DIR', os.path.join(project_root, "backend", "venv"))
         venv_python = os.path.join(venv_dir, "bin", "python")
         
         # Check if virtual environment exists
