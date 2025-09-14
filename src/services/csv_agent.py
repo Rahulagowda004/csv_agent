@@ -65,6 +65,30 @@ class CSVAgentService:
         print(f"📊 Created plots folder: {plots_folder}")
         
         return csv_folder
+    
+    def upload_csv_file(self, file_path: str, user_id: str) -> str:
+        """
+        Upload and standardize CSV file to user's folder as 'data.csv'.
+        
+        Args:
+            file_path: Path to the uploaded CSV file
+            user_id: User identifier
+            
+        Returns:
+            Path to the standardized CSV file (data/csv/user_id/data.csv)
+        """
+        # Create user folder
+        csv_folder = self._create_user_folder(user_id)
+        
+        # Standardized filename
+        standardized_path = os.path.join(csv_folder, "data.csv")
+        
+        # Copy/rename the file to standardized name
+        import shutil
+        shutil.copy2(file_path, standardized_path)
+        
+        print(f"📄 Uploaded CSV file: {file_path} → {standardized_path}")
+        return standardized_path
         
     async def process_message(self, message: str, user_id: str, session_id: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -127,21 +151,9 @@ class CSVAgentService:
                 # Add folder paths to system prompt
                 agent_instructions = f"""{CSV_AGENT_SYSTEM_PROMPT}
 
-**IMPORTANT - Your user folder name: {user_id}**
-- Read CSV data from: `data/csv/{user_id}/data.csv`
-- Save images to: `data/plots/{user_id}/image_name.png`
-
-When using execute_code(), define paths like:
-```python
-import pandas as pd
-import matplotlib.pyplot as plt
-
-# Read data
-df = pd.read_csv('data/csv/{user_id}/data.csv')
-
-# Save plots
-plt.savefig('data/plots/{user_id}/chart.png')
-```"""
+**IMPORTANT - Your user folder: {user_id}**
+- CSV data: `data/csv/{user_id}/data.csv`
+- Save plots: `data/plots/{user_id}/`"""
                 
                 agent = Agent(
                     name="CSV Analysis Agent",
@@ -165,6 +177,21 @@ plt.savefig('data/plots/{user_id}/chart.png')
                     max_turns=10
                 )
                 print("✅ CSVAgentService: Agent execution completed")
+                
+                # Log tool calls if available
+                try:
+                    if hasattr(result, 'turns') and result.turns:
+                        print("🔧 CSVAgentService: Tool calls made:")
+                        for i, turn in enumerate(result.turns):
+                            if hasattr(turn, 'messages') and turn.messages:
+                                for msg in turn.messages:
+                                    if hasattr(msg, 'tool_calls') and msg.tool_calls:
+                                        for tool_call in msg.tool_calls:
+                                            print(f"  📞 Turn {i+1}: {tool_call.function.name}({tool_call.function.arguments[:100]}{'...' if len(tool_call.function.arguments) > 100 else ''})")
+                    else:
+                        print("🔧 CSVAgentService: No tool call information available")
+                except Exception as tool_log_error:
+                    print(f"⚠️ CSVAgentService: Could not log tool calls: {tool_log_error}")
                 
                 print("📊 CSVAgentService: Processing agent response...")
                 # Extract structured response

@@ -1,7 +1,7 @@
 # server.py
 from fastmcp import FastMCP
 from pathlib import Path
-import os, subprocess, tempfile
+import os, subprocess, tempfile, json
 import pandas as pd
 import numpy as np
 from dotenv import load_dotenv
@@ -221,6 +221,125 @@ def analyze_csv_data(user_folder: str) -> dict:
         import traceback
         traceback.print_exc()
         return {"error": error_msg}
+
+@mcp.tool
+def manipulate_table(script: str) -> str:
+    """Execute Python script for table manipulation operations. Returns JSON with processed data."""
+    try:
+        # Create temp file for table manipulation
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+            # Add imports for data analysis
+            imports = f"""
+import pandas as pd
+import numpy as np
+import json
+import warnings
+warnings.filterwarnings('ignore')
+
+# Note: Folder paths will be defined directly in the user's script
+
+"""
+            f.write(imports + script)
+            temp_path = f.name
+        
+        # Execute using virtual environment
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        venv_dir = os.path.join(project_root, "venv")
+        venv_python = os.path.join(venv_dir, "bin", "python")
+        
+        if not os.path.exists(venv_python):
+            return "ERROR: Virtual environment not found. Please run 'python3 -m venv venv' in the project root directory."
+        
+        result = subprocess.run(
+            [venv_python, temp_path], 
+            capture_output=True, 
+            text=True, 
+            timeout=60,
+            cwd=project_root
+        )
+        
+        os.unlink(temp_path)
+        
+        output = ""
+        if result.stdout:
+            output += f"STDOUT:\n{result.stdout}\n"
+        if result.stderr:
+            output += f"STDERR:\n{result.stderr}\n"
+        if result.returncode != 0:
+            output += f"EXIT CODE: {result.returncode}\n"
+            
+        return output if output else "Table manipulation executed successfully with no output."
+        
+    except subprocess.TimeoutExpired:
+        return "ERROR: Table manipulation timed out after 1 minute."
+    except Exception as e:
+        return f"ERROR: Failed to execute table manipulation: {str(e)}"
+
+@mcp.tool
+def create_visualization(script: str) -> str:
+    """Execute Python script for creating visualizations and charts. Returns execution output."""
+    try:
+        # Create temp file for visualization
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+            # Add imports for data analysis and visualization
+            imports = f"""
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import plotly.express as px
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import warnings
+import os
+from pathlib import Path
+warnings.filterwarnings('ignore')
+
+# Set matplotlib backend to non-interactive
+plt.switch_backend('Agg')
+
+# Set style for better plots
+plt.style.use('default')
+sns.set_palette("husl")
+
+# Note: Folder paths will be defined directly in the user's script
+
+"""
+            f.write(imports + script)
+            temp_path = f.name
+        
+        # Execute using virtual environment
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        venv_dir = os.path.join(project_root, "venv")
+        venv_python = os.path.join(venv_dir, "bin", "python")
+        
+        if not os.path.exists(venv_python):
+            return "ERROR: Virtual environment not found. Please run 'python3 -m venv venv' in the project root directory."
+        
+        result = subprocess.run(
+            [venv_python, temp_path], 
+            capture_output=True, 
+            text=True, 
+            timeout=60,
+            cwd=project_root
+        )
+        
+        os.unlink(temp_path)
+        
+        output = ""
+        if result.stdout:
+            output += f"STDOUT:\n{result.stdout}\n"
+        if result.stderr:
+            output += f"STDERR:\n{result.stderr}\n"
+        if result.returncode != 0:
+            output += f"EXIT CODE: {result.returncode}\n"
+            
+        return output if output else "Visualization executed successfully with no output."
+        
+    except subprocess.TimeoutExpired:
+        return "ERROR: Visualization timed out after 1 minute."
+    except Exception as e:
+        return f"ERROR: Failed to execute visualization: {str(e)}"
 
 @mcp.tool
 def execute_code(script: str) -> str:

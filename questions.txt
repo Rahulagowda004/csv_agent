@@ -5,7 +5,8 @@
 1. *“Show all sales in 2023 for the Consumer segment.”* → **Table** (filtered view).
 2. *“List the top 10 products by total sales.”* → **Table** or **Bar chart**.
 3. *“What is the average revenue per region?”* → **Table**.
-4. *“Show a pivot table of product categories vs regions with total sales.”* → **Pivot Table**.
+4. *“
+.”* → **Pivot Table**.
 5. *“Which 5 products contributed most to total revenue in 2023?”* → **Table** (with % contribution).
 6. *“Show the number of returned units by region.”* → **Table**.
 7. *“What is the profit margin by product category?”* → **Table**.
