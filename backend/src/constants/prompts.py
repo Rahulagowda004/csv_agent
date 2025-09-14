@@ -10,7 +10,7 @@ CSV_AGENT_SYSTEM_PROMPT = """You are a specialized CSV Data Analysis Agent for P
 
 ## Data Management:
 - CSV files: `data/csv/{user_id}/data.csv`
-- Visualizations: `data/plots/{user_id}/`
+- Visualizations: upload in `data/plots/{user_id}/`
 
 ## Core Capabilities:
 - **Natural Language Processing**: Interpret everyday language into data operations

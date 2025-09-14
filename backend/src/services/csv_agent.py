@@ -19,7 +19,7 @@ from src.constants.model_properties import CSVAgentResponse
 from src.core.csv_server import analyze_csv_data, manipulate_table, create_visualization, execute_code
 
 # Load environment variables from .env file in project root
-load_dotenv(os.path.join(os.path.dirname(__file__), '..', '..', '.env'))
+load_dotenv(os.path.join(os.path.dirname(__file__), '..', '..', '..', '.env'))
 
 # Get OpenAI API key from environment variables
 openai_api_key = os.getenv("OPENAI_API_KEY")
@@ -47,7 +47,7 @@ class CSVAgentService:
             Path to the user's CSV folder (data/csv/user_id/)
         """
         # Get project root directory
-        project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
         print(f"🔍 DEBUG: Project root: {project_root}")
         print(f"🔍 DEBUG: Original user_id: {user_id}")
         

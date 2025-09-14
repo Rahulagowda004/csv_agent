@@ -254,19 +254,28 @@ class ChatInterface:
         """Display an image from the given path.
         
         Args:
-            image_path: Path to the image file (relative to project root)
+            image_path: Path to the image file (as sent by backend)
         """
         print(f"🖼️ Frontend: Attempting to display image: {image_path}")
         try:
-            # Convert relative path to absolute path from project root
-            if not os.path.isabs(image_path):
-                # Get project root (go up from frontend/src/ to project root)
-                current_file_dir = os.path.dirname(os.path.abspath(__file__))  # frontend/src/
-                frontend_dir = os.path.dirname(current_file_dir)  # frontend/
-                project_root = os.path.dirname(frontend_dir)  # project root
+            # Get project root (go up from frontend/src/ to project root)
+            current_file_dir = os.path.dirname(os.path.abspath(__file__))  # frontend/src/
+            frontend_dir = os.path.dirname(current_file_dir)  # frontend/
+            project_root = os.path.dirname(frontend_dir)  # project root
+            
+            # Handle different path formats from backend
+            if os.path.isabs(image_path):
+                # Absolute path - use as is
+                full_image_path = image_path
+            elif image_path.startswith('data/plots/'):
+                # Backend sends paths like "data/plots/user_id/image.png" - prepend project root
+                full_image_path = os.path.join(project_root, image_path)
+            elif image_path.startswith('backend/data/plots/'):
+                # Backend might send paths like "backend/data/plots/user_id/image.png" - prepend project root
                 full_image_path = os.path.join(project_root, image_path)
             else:
-                full_image_path = image_path
+                # Fallback - treat as relative to project root
+                full_image_path = os.path.join(project_root, image_path)
             
             print(f"🖼️ Frontend: Full image path: {full_image_path}")
             print(f"🖼️ Frontend: Image exists: {os.path.exists(full_image_path)}")

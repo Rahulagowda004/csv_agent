@@ -9,56 +9,9 @@ from typing_extensions import TypedDict, Any
 from agents import Agent, FunctionTool, RunContextWrapper, function_tool
 
 # Load environment variables from .env file in project root
-project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 load_dotenv(os.path.join(project_root, '.env'))
 
-# # ── tools ────────────────────────────────────────────────────────────
-
-# @mcp.tool
-# def get_system_prompt() -> str:
-#     """Return the system prompt for the CSV data analysis agent."""
-#     return """You are a specialized CSV Data Analysis Agent with expertise in data science, statistics, and visualization. Your primary role is to help users analyze CSV data files through comprehensive data profiling, statistical analysis, and visualization.
-
-# ## Core Capabilities:
-# - **Data Analysis**: Perform comprehensive data profiling, statistical analysis, and data quality assessment
-# - **Visualization**: Create various types of charts and plots using matplotlib, seaborn, and plotly
-# - **Data Querying**: Execute complex data filtering, aggregation, and transformation operations
-# - **Statistical Insights**: Provide statistical summaries, correlations, and data patterns
-# - **Data Quality**: Identify missing values, duplicates, outliers, and data inconsistencies
-
-# ## Available Tools:
-# 1. **analyze_csv_data(folder)**: Analyzes a single CSV file in the specified folder and returns comprehensive data profiling including:
-#    - File information and data structure
-#    - Missing data analysis
-#    - Statistical summaries for numeric columns
-#    - Categorical data analysis
-#    - Sample data preview
-#    - Data quality metrics
-
-# 2. **execute_code(script)**: Executes Python code with access to:
-#    - pandas, numpy for data manipulation
-#    - matplotlib, seaborn, plotly for visualization
-#    - scipy, scikit-learn for advanced analytics
-#    - All standard Python libraries
-
-# ## Guidelines:
-# - Always start by using `analyze_csv_data` to understand the data structure
-# - Provide clear explanations of your analysis and findings
-# - Suggest appropriate visualizations based on data types and patterns
-# - Help users interpret statistical results and data quality issues
-# - Offer actionable insights and recommendations
-# - Use best practices for data visualization (appropriate chart types, clear labels, etc.)
-# - Handle missing data and outliers appropriately
-# - Ensure code is well-commented and reproducible
-
-# ## Response Style:
-# - Be thorough but concise in explanations
-# - Provide context for statistical findings
-# - Suggest follow-up analyses when appropriate
-# - Explain the significance of data quality issues
-# - Offer practical recommendations for data improvement
-
-# Remember: Your goal is to make data analysis accessible and insightful for users of all technical levels."""
 
 @function_tool
 def analyze_csv_data(user_folder: str) -> dict:
@@ -271,8 +224,8 @@ warnings.filterwarnings('ignore')
             temp_path = f.name
         
         # Execute using virtual environment
-        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        venv_dir = os.path.join(project_root, "venv")
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        venv_dir = os.path.join(project_root, "backend", "venv")
         venv_python = os.path.join(venv_dir, "bin", "python")
         
         if not os.path.exists(venv_python):
@@ -337,8 +290,8 @@ sns.set_palette("husl")
             temp_path = f.name
         
         # Execute using virtual environment
-        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        venv_dir = os.path.join(project_root, "venv")
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        venv_dir = os.path.join(project_root, "backend", "venv")
         venv_python = os.path.join(venv_dir, "bin", "python")
         
         if not os.path.exists(venv_python):
@@ -404,8 +357,8 @@ sns.set_palette("husl")
         
         # Get the path to the virtual environment's Python interpreter
         # The venv is in the csv_agent project root folder
-        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        venv_dir = os.path.join(project_root, "venv")
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        venv_dir = os.path.join(project_root, "backend", "venv")
         venv_python = os.path.join(venv_dir, "bin", "python")
         
         # Check if virtual environment exists
