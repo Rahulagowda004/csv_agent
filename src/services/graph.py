@@ -280,110 +280,324 @@ class State(TypedDict):
     structured_output: AgentOutput
 
 def extract_structured_data_from_messages(messages: List[BaseMessage]) -> AgentOutput:
-    """Extract structured data from the conversation messages."""
+    """Extract structured data from the conversation messages with improved parsing."""
     
-    # Extract main response from the final AI message
-    main_response = ""
-    for message in reversed(messages):
-        if hasattr(message, 'content') and message.content and not hasattr(message, 'name'):
-            main_response = str(message.content)
-            break
-    
-    # Extract image paths from tool responses and messages
-    images = []
-    image_pattern = r'(.*?\.png|.*?\.jpg|.*?\.jpeg|.*?\.svg)'
+    # Extract all content from messages for analysis
+    all_content = ""
+    ai_messages = []
+    tool_outputs = []
     
     for message in messages:
         if hasattr(message, 'content') and message.content:
             content = str(message.content)
-            # Look for saved image files
-            matches = re.findall(image_pattern, content, re.IGNORECASE)
-            for match in matches:
-                if 'data/' in match or './data/' in match:
-                    # Try to extract a meaningful title from context
-                    title = "Generated Visualization"
-                    if "revenue" in content.lower():
-                        title = "Revenue Analysis"
-                    elif "trend" in content.lower():
-                        title = "Trend Analysis"
-                    elif "distribution" in content.lower():
-                        title = "Distribution Analysis"
-                    elif "correlation" in content.lower():
-                        title = "Correlation Analysis"
-                    
-                    images.append(ImageInfo(
-                        title=title,
-                        path=match.strip()
-                    ))
+            all_content += content + "\n"
+            
+            # Categorize messages
+            if hasattr(message, 'name'):  # Tool message
+                tool_outputs.append((message.name, content))
+            elif not hasattr(message, 'tool_calls'):  # AI message without tool calls
+                ai_messages.append(content)
     
-    # Extract dataframe information from tool responses
+    # EXTRACT STEPS - look for step-by-step patterns in AI responses
+    steps = []
+    step_patterns = [
+        r'step\s*\d+[:\-\.]?\s*([^\n]+)',
+        r'\d+\.\s*([^\n]+)',
+        r'first[,\s]+([^\n]+)',
+        r'then[,\s]+([^\n]+)',
+        r'next[,\s]+([^\n]+)',
+        r'finally[,\s]+([^\n]+)'
+    ]
+    
+    for ai_content in ai_messages:
+        for pattern in step_patterns:
+            matches = re.findall(pattern, ai_content, re.IGNORECASE | re.MULTILINE)
+            for match in matches:
+                clean_step = match.strip().rstrip('.,')
+                if len(clean_step) > 10 and clean_step not in steps:  # Avoid duplicates and too short steps
+                    steps.append(f"Step {len(steps) + 1}: {clean_step}")
+    
+    # If no steps found, generate from tool usage
+    if not steps:
+        step_count = 1
+        for tool_name, tool_output in tool_outputs:
+            if tool_name == 'analyze_csv_data':
+                steps.append(f"Step {step_count}: Analyzed CSV data structure and performed comprehensive data profiling")
+                step_count += 1
+            elif tool_name == 'execute_code':
+                if 'plt.savefig' in tool_output or 'saved to' in tool_output.lower():
+                    steps.append(f"Step {step_count}: Generated data visualizations and saved plots")
+                else:
+                    steps.append(f"Step {step_count}: Executed data analysis code")
+                step_count += 1
+        
+        if not steps:
+            steps = ["Step 1: Performed comprehensive CSV data analysis"]
+    
+    # EXTRACT IMAGES - improved pattern matching for saved files
+    images = []
+    # Enhanced pattern to catch various file path formats
+    image_patterns = [
+        r'(?:saved to:|saved as:|saved at:|plot_path\s*=|file:)\s*["\']([^"\']+\.(?:png|jpg|jpeg|svg|gif))["\']',
+        r'([./]*data/plots/[^"\'\s\n`]+\.(?:png|jpg|jpeg|svg|gif))',
+        r'([./]*plots/[^"\'\s\n`]+\.(?:png|jpg|jpeg|svg|gif))'
+    ]
+    
+    seen_paths = set()
+    for pattern in image_patterns:
+        matches = re.findall(pattern, all_content, re.IGNORECASE)
+        for match in matches:
+            clean_path = match.strip().strip('"\'`').strip()
+            # Skip empty, very short paths, or malformed paths
+            if len(clean_path) < 8 or clean_path in seen_paths or clean_path.startswith('`'):
+                continue
+            # Skip paths that look malformed
+            if '```' in clean_path or clean_path.count('`') > 0:
+                continue
+            
+            seen_paths.add(clean_path)
+            
+            # Generate meaningful title from path and context
+            title = "Data Visualization"
+            filename = os.path.basename(clean_path).lower()
+            
+            # More specific title generation based on filename
+            if 'top_5_products' in filename:
+                title = "Top 5 Products Analysis"
+            elif 'revenue' in filename:
+                if 'region' in filename:
+                    title = "Revenue by Region Analysis"
+                elif 'time' in filename or 'trend' in filename:
+                    title = "Revenue Trend Analysis"
+                else:
+                    title = "Revenue Analysis Chart"
+            elif 'sales' in filename:
+                if 'distribution' in filename:
+                    title = "Sales Distribution Chart"
+                elif 'channel' in filename:
+                    title = "Sales by Channel Analysis"
+                else:
+                    title = "Sales Analysis Chart"
+            elif 'distribution' in filename:
+                title = "Distribution Analysis"
+            elif 'correlation' in filename:
+                title = "Correlation Matrix"
+            elif 'trend' in filename:
+                title = "Trend Analysis"
+            elif 'category' in filename:
+                title = "Category Analysis"
+            elif 'region' in filename:
+                title = "Regional Analysis"
+            elif 'channel' in filename:
+                title = "Channel Analysis"
+            elif 'matrix' in filename:
+                title = "Analysis Matrix"
+            elif 'chart' in filename or 'plot' in filename:
+                title = "Data Chart"
+            
+            images.append(ImageInfo(title=title, path=clean_path))
+    
+    # EXTRACT DATAFRAMES - improved JSON parsing
     dataframes = []
-    for message in messages:
-        if hasattr(message, 'name') and message.name == 'analyze_csv_data':
+    
+    # First, try to get CSV analysis data
+    for tool_name, tool_output in tool_outputs:
+        if tool_name == 'analyze_csv_data':
             try:
-                content = str(message.content)
-                # Try to parse JSON content for sample data
-                if 'sample_data' in content:
-                    # Parse the JSON to extract actual data
-                    try:
-                        import json
-                        data_start = content.find('{')
-                        data_end = content.rfind('}') + 1
-                        if data_start != -1 and data_end != -1:
-                            json_data = json.loads(content[data_start:data_end])
-                            if 'sample_data' in json_data:
-                                sample_rows = json_data['sample_data'].get('first_5_rows', [])
-                                dataframes.append(DataFrameInfo(
-                                    description="CSV Data Sample with 6,199 rows and 19 columns - Sales data spanning 2023-2024",
-                                    data=sample_rows if sample_rows else []
-                                ))
-                    except Exception as e:
-                        # Fallback with empty data
+                # Find JSON content in tool output
+                json_start = tool_output.find('{')
+                json_end = tool_output.rfind('}') + 1
+                
+                if json_start != -1 and json_end > json_start:
+                    json_str = tool_output[json_start:json_end]
+                    data = json.loads(json_str)
+                    
+                    # Extract data information
+                    data_info = data.get('data_info', {})
+                    sample_data = data.get('sample_data', {})
+                    file_info = data.get('file_info', {})
+                    
+                    rows = data_info.get('rows', 'unknown')
+                    cols = data_info.get('columns', 'unknown')
+                    filename = file_info.get('filename', 'data.csv')
+                    
+                    description = f"CSV Dataset Analysis: {filename} with {rows} rows and {cols} columns"
+                    
+                    # Get sample rows as proper JSON objects
+                    sample_rows = sample_data.get('first_5_rows', [])
+                    if not sample_rows:
+                        sample_rows = sample_data.get('last_5_rows', [])
+                    
+                    # Ensure sample_rows is a list of dictionaries
+                    if sample_rows and isinstance(sample_rows, list):
+                        # Clean up the data to ensure JSON serializable
+                        clean_sample_rows = []
+                        for row in sample_rows[:5]:  # Limit to 5 rows
+                            if isinstance(row, dict):
+                                clean_row = {}
+                                for k, v in row.items():
+                                    # Convert numpy types to native Python types
+                                    if hasattr(v, 'item'):  # numpy scalar
+                                        clean_row[k] = v.item()
+                                    elif pd.isna(v):  # Handle NaN values
+                                        clean_row[k] = None
+                                    else:
+                                        clean_row[k] = v
+                                clean_sample_rows.append(clean_row)
+                        
                         dataframes.append(DataFrameInfo(
-                            description="CSV Data Sample - Sales dataset analysis",
+                            description=description,
+                            data=clean_sample_rows
+                        ))
+                    else:
+                        dataframes.append(DataFrameInfo(
+                            description=description,
                             data=[]
                         ))
-            except:
-                pass
+                        
+            except (json.JSONDecodeError, KeyError, ValueError) as e:
+                # Fallback with minimal info
+                dataframes.append(DataFrameInfo(
+                    description="CSV Dataset Analysis - Unable to parse sample data",
+                    data=[]
+                ))
     
-    # Ensure we always have at least one dataframe entry
+    # Second, try to extract analysis results from AI messages (like top 5 products)
+    for ai_content in ai_messages:
+        # Look for JSON data in AI responses - flexible patterns
+        json_patterns = [
+            r'```json\s*(\[.*?\])\s*```',  # Array format
+            r'```json\s*(\{.*?\})\s*```',  # Object format
+            r'"product_sales":\s*(\{[^}]+\})',  # Specific product sales pattern
+        ]
+        
+        for pattern in json_patterns:
+            json_matches = re.findall(pattern, ai_content, re.DOTALL)
+            
+            for json_match in json_matches:
+                try:
+                    # Handle different data formats
+                    if json_match.strip().startswith('{') and '"product_sales"' not in json_match:
+                        # Direct object format
+                        result_data = json.loads(json_match)
+                        if isinstance(result_data, dict):
+                            # Convert dict to list of objects
+                            if any(isinstance(v, (int, float)) for v in result_data.values()):
+                                # This looks like product: value mapping
+                                converted_data = []
+                                for key, value in result_data.items():
+                                    converted_data.append({"product_name": key, "units_sold": value})
+                                result_data = converted_data
+                    elif '"product_sales"' in json_match:
+                        # Handle nested product_sales format
+                        parsed = json.loads(f'{{{json_match}}}')
+                        product_sales = parsed.get('product_sales', {})
+                        if product_sales:
+                            result_data = []
+                            for key, value in product_sales.items():
+                                result_data.append({"product_name": key, "units_sold": value})
+                    else:
+                        result_data = json.loads(json_match)
+                    
+                    if isinstance(result_data, list) and len(result_data) > 0:
+                        # Determine description based on content
+                        first_item = result_data[0]
+                        if isinstance(first_item, dict):
+                            keys = list(first_item.keys())
+                            if 'product_name' in keys and 'units_sold' in keys:
+                                description = f"Top {len(result_data)} Products by Units Sold Analysis"
+                            elif 'revenue' in str(keys).lower():
+                                description = f"Revenue Analysis Results ({len(result_data)} items)"
+                            elif 'region' in str(keys).lower():
+                                description = f"Regional Analysis Results ({len(result_data)} items)"
+                            else:
+                                description = f"Analysis Results ({len(result_data)} items)"
+                            
+                            dataframes.append(DataFrameInfo(
+                                description=description,
+                                data=result_data
+                            ))
+                except json.JSONDecodeError:
+                    continue
+    
+    # Ensure at least one dataframe entry
     if not dataframes:
         dataframes.append(DataFrameInfo(
-            description="CSV Analysis Result - Sales data with 6,199 records and 19 columns",
+            description="CSV Data Analysis Results",
             data=[]
         ))
     
-    # Generate suggestions based on the analysis
+    # EXTRACT SUGGESTIONS - context-aware generation
     suggestions = []
-    if "trend" in main_response.lower():
+    
+    # Analyze the content to generate relevant suggestions
+    content_lower = all_content.lower()
+    
+    # Column-specific suggestions based on actual data
+    if 'revenue' in content_lower or 'sales' in content_lower:
         suggestions.extend([
-            "Analyze seasonal patterns in the data",
-            "Create forecasting models for future trends",
-            "Examine correlation between different metrics"
+            "Analyze revenue trends over time periods",
+            "Identify top-performing products or regions",
+            "Create customer segmentation analysis"
         ])
     
-    if "revenue" in main_response.lower():
+    if 'distribution' in content_lower:
         suggestions.extend([
-            "Analyze revenue by customer segments",
-            "Identify top-performing products/regions",
-            "Create profitability analysis"
+            "Examine outliers and anomalies in distributions",
+            "Perform normality tests on key metrics",
+            "Create box plots for detailed distribution analysis"
         ])
     
-    # Default suggestions if none were generated
+    if 'correlation' in content_lower:
+        suggestions.extend([
+            "Investigate strong correlations for causal relationships",
+            "Create scatter plots for key variable pairs",
+            "Perform multivariate regression analysis"
+        ])
+    
+    if 'category' in content_lower or 'region' in content_lower:
+        suggestions.extend([
+            "Compare performance across different categories/regions",
+            "Analyze market share by segment",
+            "Create geographic heat maps"
+        ])
+    
+    if 'time' in content_lower or 'date' in content_lower:
+        suggestions.extend([
+            "Analyze seasonal patterns and trends",
+            "Create time series forecasting models",
+            "Examine year-over-year growth rates"
+        ])
+    
+    # Quality-based suggestions
+    if 'missing' in content_lower or 'null' in content_lower:
+        suggestions.extend([
+            "Investigate patterns in missing data",
+            "Implement data imputation strategies",
+            "Assess impact of missing data on analysis"
+        ])
+    
+    # Default suggestions if none generated
     if not suggestions:
         suggestions = [
-            "Perform deeper statistical analysis on key metrics",
-            "Create additional visualizations for insights",
-            "Analyze data quality and outliers",
-            "Generate predictive models",
-            "Compare performance across different time periods"
+            "Perform detailed statistical analysis on numeric columns",
+            "Create additional visualizations for key insights",
+            "Analyze data quality and handle outliers",
+            "Explore relationships between variables",
+            "Generate predictive models for forecasting"
         ]
     
+    # Remove duplicates and limit to 5
+    unique_suggestions = []
+    for suggestion in suggestions:
+        if suggestion not in unique_suggestions:
+            unique_suggestions.append(suggestion)
+    
     return AgentOutput(
-        response=main_response or "Analysis completed successfully.",
+        steps=steps[:10],  # Limit to 10 steps
         images=images,
         dataframes=dataframes,
-        suggestions=suggestions[:5]  # Limit to 5 suggestions
+        suggestions=unique_suggestions[:5]  # Limit to 5 suggestions
     )
 
 # Create list of tools
@@ -401,37 +615,10 @@ def bot(state: State) -> State:
 
 # Add a separate node for structured output generation
 def generate_structured_output(state: State) -> State:
-    """Generate structured output after tool execution is complete"""
-    # Use function calling method for structured output to avoid schema issues
-    structured_model = llm.with_structured_output(AgentOutput, method="function_calling")
-    
-    # Create a prompt to generate structured output from the conversation
-    summary_prompt = """Based on the above conversation and analysis, generate a structured summary that includes:
-    1. Step-by-step process of how the analysis was conducted (list each major step taken)
-    2. List of generated images with titles and paths (look for .png files mentioned)
-    3. Dataframe information with description and sample data from the CSV analysis
-    4. Actionable suggestions
-    
-    For steps, break down the analysis process into clear sequential steps like:
-    - "Step 1: Loaded and examined CSV data structure"
-    - "Step 2: Performed statistical analysis of numerical columns"
-    - "Step 3: Generated visualizations for revenue by region"
-    - etc.
-    
-    For dataframes, include:
-    - A description of the dataset (mention it has 6,199 rows and 19 columns with sales data)
-    - The sample data as a list of JSON objects (dictionaries), NOT as CSV strings
-    - Extract the first_5_rows from the analyze_csv_data tool output and format them as proper JSON objects
-    
-    For images, look for PNG files mentioned in the conversation and create meaningful titles.
-    
-    CRITICAL: The 'data' field in dataframes MUST be a list of dictionaries (JSON objects), not strings or CSV format.
-    Example format for data field: [{"column1": "value1", "column2": "value2"}, {"column1": "value3", "column2": "value4"}]"""
-    
-    messages = state["messages"] + [HumanMessage(content=summary_prompt)]
-    structured_response = structured_model.invoke(messages)
-    
-    return {"structured_output": structured_response}
+    """Generate structured output after tool execution is complete using improved extraction."""
+    # Use the improved extraction function instead of LLM generation
+    structured_output = extract_structured_data_from_messages(state["messages"])
+    return {"structured_output": structured_output}
 
 def to_continue(state: State) -> str:
     messages = state["messages"]
@@ -479,7 +666,7 @@ graph.add_edge("finalize", END)
 app = graph.compile()
 
 def print_stream_with_structured_output(stream):
-    """Print stream and return the final structured output."""
+    """Print stream and return the final structured output with enhanced display."""
     final_state = None
     
     for s in stream:
@@ -494,29 +681,62 @@ def print_stream_with_structured_output(stream):
     if final_state and "structured_output" in final_state:
         structured = final_state["structured_output"]
         print("\n" + "="*80)
-        print("📊 STRUCTURED OUTPUT")
+        print("📊 STRUCTURED OUTPUT SUMMARY")
         print("="*80)
-        print(f"� Analysis Steps ({len(structured.steps)}):")
+        
+        # Display steps with better formatting
+        print(f"🔄 Analysis Process ({len(structured.steps)} steps):")
         for i, step in enumerate(structured.steps, 1):
-            print(f"  {i}. {step}")
+            print(f"  {i:2d}. {step}")
         
+        # Display images with validation
         if structured.images:
-            print(f"\n🖼️ Generated Images ({len(structured.images)}):")
+            print(f"\n🖼️ Generated Visualizations ({len(structured.images)} files):")
             for i, img in enumerate(structured.images, 1):
-                print(f"  {i}. {img.title}: {img.path}")
+                # Check if file exists
+                file_exists = "✅" if os.path.exists(img.path) else "❌"
+                print(f"  {i:2d}. {img.title}")
+                print(f"      Path: {img.path} {file_exists}")
+        else:
+            print(f"\n🖼️ Generated Visualizations: None")
         
+        # Display dataframes with sample preview
         if structured.dataframes:
-            print(f"\n📈 DataFrames ({len(structured.dataframes)}):")
+            print(f"\n📈 DataFrames ({len(structured.dataframes)} datasets):")
             for i, df in enumerate(structured.dataframes, 1):
-                print(f"  {i}. {df.description} - {len(df.data)} sample rows")
+                print(f"  {i:2d}. {df.description}")
+                if df.data and len(df.data) > 0:
+                    print(f"      Sample Data ({len(df.data)} rows):")
+                    # Show first row as example
+                    if df.data[0]:
+                        sample_row = df.data[0]
+                        for k, v in list(sample_row.items())[:3]:  # Show first 3 columns
+                            print(f"        {k}: {v}")
+                        if len(sample_row) > 3:
+                            print(f"        ... and {len(sample_row) - 3} more columns")
+                else:
+                    print(f"      Sample Data: No data available")
+        else:
+            print(f"\n📈 DataFrames: None")
         
+        # Display suggestions
         if structured.suggestions:
-            print(f"\n💡 Suggestions ({len(structured.suggestions)}):")
+            print(f"\n💡 Actionable Suggestions ({len(structured.suggestions)} items):")
             for i, suggestion in enumerate(structured.suggestions, 1):
-                print(f"  {i}. {suggestion}")
+                print(f"  {i:2d}. {suggestion}")
+        else:
+            print(f"\n� Actionable Suggestions: None")
         
-        print("\n📄 JSON Output:")
-        print(json.dumps(structured.model_dump(), indent=2, ensure_ascii=False))
+        # Display compact JSON for API usage
+        print("\n�📄 Structured JSON Output:")
+        json_output = structured.model_dump()
+        # Truncate long data arrays for display
+        if json_output.get('dataframes'):
+            for df in json_output['dataframes']:
+                if df.get('data') and len(df['data']) > 2:
+                    df['data'] = df['data'][:2] + [f"... {len(df['data']) - 2} more rows truncated for display"]
+        
+        print(json.dumps(json_output, indent=2, ensure_ascii=False))
         
         return structured
     
@@ -555,17 +775,7 @@ def run_csv_agent(query: str) -> AgentOutput:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
-    inputs = {"messages": [("user", """Please analyze the CSV data in the ./data folder. 
-                After analyzing the data, create meaningful visualizations (charts, plots) based on the data patterns you find. 
-                Save all generated visualizations as image files (PNG format) in the same data directory. 
-                Provide a comprehensive analysis report including:
-                1. Data overview and structure
-                2. Statistical insights
-                3. Data quality assessment
-                4. Key findings and patterns
-                5. Recommendations based on the analysis
-
-                Make sure to save any plots or charts you create to help visualize the data insights.""")]}
+    inputs = {"messages": [("user", "Show me the top 5 products by sales volume and create a visualization.")]}
     
     print("=" * 80)
     print("🚀 CSV AGENT - WITH STRUCTURED OUTPUT")
