@@ -6,6 +6,8 @@ from langchain_core.tools import tool
 from dotenv import load_dotenv
 from langgraph.prebuilt import ToolNode
 from langgraph.graph.message import add_messages
+from typing import List, Dict, Any
+from pydantic import BaseModel, Field
 import os
 import pandas as pd
 import numpy as np
@@ -13,6 +15,8 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import tempfile
 import subprocess
+import json
+import re
 from pathlib import Path
 
 from src.constants.prompts import CSV_AGENT_SYSTEM_PROMPT
@@ -263,10 +267,131 @@ sns.set_palette("husl")
         return "ERROR: Script execution timed out after 5 minutes."
     except Exception as e:
         return f"ERROR: Failed to execute script: {str(e)}"
+class ImageInfo(BaseModel):
+    """Information about a generated image."""
+    title: str = Field(..., description="Title or description of the image")
+    path: str = Field(..., description="File path to the image")
+
+class DataFrameInfo(BaseModel):
+    """Information about a dataframe."""
+    description: str = Field(..., description="Description of the dataframe content")
+    row_count: int = Field(..., description="Number of rows in the dataframe")
+    column_count: int = Field(..., description="Number of columns in the dataframe")
+
+class AgentOutput(BaseModel):
+    """Unified structured output for CSV agent responses with titles for images."""
+    
+    response: str = Field(..., description="Main textual response or analysis summary")
+    
+    images: List[ImageInfo] = Field(
+        default_factory=list,
+        description="List of generated plots with title and path"
+    )
+    
+    dataframes: List[DataFrameInfo] = Field(
+        default_factory=list,
+        description="List of dataframe information"
+    )
+    
+    suggestions: List[str] = Field(
+        default_factory=list,
+        description="Actionable recommendations or next steps"
+    )
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# LANGGRAPH SETUP
+# LANGGRAPH SETUP WITH STRUCTURED OUTPUT
 # ═══════════════════════════════════════════════════════════════════════════════
+
+class State(TypedDict):
+    messages: Annotated[Sequence[BaseMessage], add_messages]
+    structured_output: AgentOutput
+
+def extract_structured_data_from_messages(messages: List[BaseMessage]) -> AgentOutput:
+    """Extract structured data from the conversation messages."""
+    
+    # Extract main response from the final AI message
+    main_response = ""
+    for message in reversed(messages):
+        if hasattr(message, 'content') and message.content and not hasattr(message, 'name'):
+            main_response = str(message.content)
+            break
+    
+    # Extract image paths from tool responses and messages
+    images = []
+    image_pattern = r'(.*?\.png|.*?\.jpg|.*?\.jpeg|.*?\.svg)'
+    
+    for message in messages:
+        if hasattr(message, 'content') and message.content:
+            content = str(message.content)
+            # Look for saved image files
+            matches = re.findall(image_pattern, content, re.IGNORECASE)
+            for match in matches:
+                if 'data/' in match or './data/' in match:
+                    # Try to extract a meaningful title from context
+                    title = "Generated Visualization"
+                    if "revenue" in content.lower():
+                        title = "Revenue Analysis"
+                    elif "trend" in content.lower():
+                        title = "Trend Analysis"
+                    elif "distribution" in content.lower():
+                        title = "Distribution Analysis"
+                    elif "correlation" in content.lower():
+                        title = "Correlation Analysis"
+                    
+                    images.append(ImageInfo(
+                        title=title,
+                        path=match.strip()
+                    ))
+    
+    # Extract dataframe information from tool responses
+    dataframes = []
+    for message in messages:
+        if hasattr(message, 'name') and message.name == 'analyze_csv_data':
+            try:
+                content = str(message.content)
+                # Try to parse JSON content for sample data
+                if 'sample_data' in content:
+                    # This would contain the dataframe preview
+                    dataframes.append(DataFrameInfo(
+                        description="CSV Data Sample",
+                        row_count=0,  # Will be extracted from actual data
+                        column_count=0
+                    ))
+            except:
+                pass
+    
+    # Generate suggestions based on the analysis
+    suggestions = []
+    if "trend" in main_response.lower():
+        suggestions.extend([
+            "Analyze seasonal patterns in the data",
+            "Create forecasting models for future trends",
+            "Examine correlation between different metrics"
+        ])
+    
+    if "revenue" in main_response.lower():
+        suggestions.extend([
+            "Analyze revenue by customer segments",
+            "Identify top-performing products/regions",
+            "Create profitability analysis"
+        ])
+    
+    # Default suggestions if none were generated
+    if not suggestions:
+        suggestions = [
+            "Perform deeper statistical analysis on key metrics",
+            "Create additional visualizations for insights",
+            "Analyze data quality and outliers",
+            "Generate predictive models",
+            "Compare performance across different time periods"
+        ]
+    
+    return AgentOutput(
+        response=main_response or "Analysis completed successfully.",
+        images=images,
+        dataframes=dataframes,
+        suggestions=suggestions[:5]  # Limit to 5 suggestions
+    )
 
 # Create list of tools
 tools = [analyze_csv_data, execute_code]
@@ -275,29 +400,51 @@ print(f"Loaded {len(tools)} tools:")
 for tool in tools:
     print(f"- {tool.name}")
 
-class State(TypedDict):
-    messages: Annotated[Sequence[BaseMessage], add_messages]
-
 llm = ChatOpenAI(model="gpt-4o")
-# Bind tools to the LLM
-llm_with_tools = llm.bind_tools(tools)
+# First bind tools to enable tool calling
+model_with_tools = llm.bind_tools(tools)
 
 def bot(state: State) -> State:
     """CSV Agent with specialized system prompt"""
     system_prompt = SystemMessage(content=CSV_AGENT_SYSTEM_PROMPT)
-    response = llm_with_tools.invoke([system_prompt] + state["messages"])
+    response = model_with_tools.invoke([system_prompt] + state["messages"])
     return {"messages": [response]}
+
+# Add a separate node for structured output generation
+def generate_structured_output(state: State) -> State:
+    """Generate structured output after tool execution is complete"""
+    # Use function calling method for structured output to avoid schema issues
+    structured_model = llm.with_structured_output(AgentOutput, method="function_calling")
+    
+    # Create a prompt to generate structured output from the conversation
+    summary_prompt = """Based on the above conversation and analysis, generate a structured summary that includes:
+    1. Main response/analysis summary
+    2. List of generated images with titles and paths
+    3. Dataframe information
+    4. Actionable suggestions
+    
+    Extract image paths from the conversation and provide meaningful titles for each visualization."""
+    
+    messages = state["messages"] + [HumanMessage(content=summary_prompt)]
+    structured_response = structured_model.invoke(messages)
+    
+    return {"structured_output": structured_response}
 
 def to_continue(state: State) -> str:
     messages = state["messages"]
     last_message = messages[-1]
     if not last_message.tool_calls:
-        return "end"
+        return "structure"
     else:
         return "continue"
 
+def finalize_output(state: State) -> State:
+    """Generate structured output from the conversation."""
+    structured_output = extract_structured_data_from_messages(state["messages"])
+    return {"structured_output": structured_output}
+
 # ═══════════════════════════════════════════════════════════════════════════════
-# BUILD GRAPH
+# BUILD GRAPH WITH STRUCTURED OUTPUT
 # ═══════════════════════════════════════════════════════════════════════════════
 
 graph = StateGraph(State)
@@ -308,6 +455,8 @@ tool_node = ToolNode(tools)
 # Add nodes
 graph.add_node("tools", tool_node)
 graph.add_node("agent", bot)
+graph.add_node("generate_structured_output", generate_structured_output)
+graph.add_node("finalize", finalize_output)
 
 # Set entry point
 graph.set_entry_point("agent")
@@ -317,20 +466,84 @@ graph.add_conditional_edges("agent",
                             to_continue,
                             {
                                 "continue": "tools",
-                                "end": END
+                                "structure": "generate_structured_output"
                             })
 graph.add_edge("tools", "agent")
+graph.add_edge("generate_structured_output", END)
+graph.add_edge("finalize", END)
 
 # Compile the graph
 app = graph.compile()
 
-def print_stream(stream):
+def print_stream_with_structured_output(stream):
+    """Print stream and return the final structured output."""
+    final_state = None
+    
     for s in stream:
+        final_state = s
         message = s["messages"][-1]
         if isinstance(message, tuple):
             print(message)
         else:
             message.pretty_print()
+    
+    # Print structured output if available
+    if final_state and "structured_output" in final_state:
+        structured = final_state["structured_output"]
+        print("\n" + "="*80)
+        print("📊 STRUCTURED OUTPUT")
+        print("="*80)
+        print(f"📝 Response: {structured.response[:200]}..." if len(structured.response) > 200 else f"📝 Response: {structured.response}")
+        
+        if structured.images:
+            print(f"\n🖼️ Generated Images ({len(structured.images)}):")
+            for i, img in enumerate(structured.images, 1):
+                print(f"  {i}. {img.title}: {img.path}")
+        
+        if structured.dataframes:
+            print(f"\n📈 DataFrames ({len(structured.dataframes)}):")
+            for i, df in enumerate(structured.dataframes, 1):
+                print(f"  {i}. {df.description} (Rows: {df.row_count}, Columns: {df.column_count})")
+        
+        if structured.suggestions:
+            print(f"\n💡 Suggestions ({len(structured.suggestions)}):")
+            for i, suggestion in enumerate(structured.suggestions, 1):
+                print(f"  {i}. {suggestion}")
+        
+        print("\n📄 JSON Output:")
+        print(json.dumps(structured.model_dump(), indent=2, ensure_ascii=False))
+        
+        return structured
+    
+    return None
+
+async def run_csv_agent_async(query: str) -> AgentOutput:
+    """Async function to run CSV agent and return structured output."""
+    inputs = {"messages": [("user", query)]}
+    
+    final_state = None
+    async for s in app.astream(inputs):
+        final_state = s
+    
+    if final_state and "structured_output" in final_state:
+        return final_state["structured_output"]
+    else:
+        # Fallback - create structured output from messages
+        return extract_structured_data_from_messages(final_state["messages"])
+
+def run_csv_agent(query: str) -> AgentOutput:
+    """Sync function to run CSV agent and return structured output."""
+    inputs = {"messages": [("user", query)]}
+    
+    final_state = None
+    for s in app.stream(inputs):
+        final_state = s
+    
+    if final_state and "structured_output" in final_state:
+        return final_state["structured_output"]
+    else:
+        # Fallback - create structured output from messages
+        return extract_structured_data_from_messages(final_state["messages"])
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # MAIN EXECUTION
@@ -350,6 +563,15 @@ if __name__ == "__main__":
                 Make sure to save any plots or charts you create to help visualize the data insights.""")]}
     
     print("=" * 80)
-    print("🚀 CSV AGENT - SIMPLIFIED VERSION")
+    print("🚀 CSV AGENT - WITH STRUCTURED OUTPUT")
     print("=" * 80)
-    print_stream(app.stream(inputs, stream_mode="values"))
+    
+    structured_output = print_stream_with_structured_output(app.stream(inputs, stream_mode="values"))
+    print("*" * 80)
+    print(f"🚀 FINAL STRUCTURED OUTPUT: {structured_output}")
+    print("*" * 80)
+    
+    if structured_output:
+        print("\n✅ Structured output successfully generated!")
+    else:
+        print("\n❌ Failed to generate structured output")
