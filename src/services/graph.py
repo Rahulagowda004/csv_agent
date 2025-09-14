@@ -420,11 +420,13 @@ def generate_structured_output(state: State) -> State:
     
     For dataframes, include:
     - A description of the dataset (mention it has 6,199 rows and 19 columns with sales data)
-    - The sample data (first_5_rows) from the analyze_csv_data tool output
+    - The sample data as a list of JSON objects (dictionaries), NOT as CSV strings
+    - Extract the first_5_rows from the analyze_csv_data tool output and format them as proper JSON objects
     
     For images, look for PNG files mentioned in the conversation and create meaningful titles.
     
-    IMPORTANT: Always include the 'data' field in dataframes, even if it's an empty list."""
+    CRITICAL: The 'data' field in dataframes MUST be a list of dictionaries (JSON objects), not strings or CSV format.
+    Example format for data field: [{"column1": "value1", "column2": "value2"}, {"column1": "value3", "column2": "value4"}]"""
     
     messages = state["messages"] + [HumanMessage(content=summary_prompt)]
     structured_response = structured_model.invoke(messages)
