@@ -10,8 +10,42 @@ import uvicorn
 import os
 import shutil
 import time
+import pandas as pd
+from langchain_experimental.agents import create_pandas_dataframe_agent
+from langchain_openai import ChatOpenAI
+from dotenv import load_dotenv
+from src.utils.utils import extract_dataframe_from_result
 
 from src.services.csv_agent import CSVAgentService
+
+# Load environment variables
+load_dotenv()
+
+def extract_dataframe_from_result(intermediate_steps):
+    """
+    Extract the dataframe result from agent intermediate steps.
+    Returns the actual pandas DataFrame object when possible.
+    """
+    if not intermediate_steps:
+        return None
+    
+    last_result = intermediate_steps[-1][1]
+    
+    # If it's already a DataFrame, return it
+    if isinstance(last_result, pd.DataFrame):
+        return last_result
+    
+    # If it's a string representation, try to re-execute
+    action = intermediate_steps[-1][0]
+    if hasattr(action, 'tool_input') and 'query' in action.tool_input:
+        query = action.tool_input['query']
+        try:
+            result_df = eval(query.split('\n')[-1])
+            if isinstance(result_df, pd.DataFrame):
+                return result_df
+        except:
+            pass
+    return last_result
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -31,6 +65,9 @@ app.add_middleware(
 
 # Initialize the CSV agent service
 csv_agent_service = CSVAgentService()
+
+# Initialize LLM for analysis agent
+llm = ChatOpenAI(model="gpt-4", temperature=0)
 
 # Request/Response Models
 class ChatRequest(BaseModel):
@@ -54,6 +91,18 @@ class UploadResponse(BaseModel):
     filename: str
     file_path: str
     file_size: int
+
+class AnalysisRequest(BaseModel):
+    query: str
+    user_id: str
+
+class AnalysisResponse(BaseModel):
+    result: str
+    user_id: str
+    query: str
+    response_time_seconds: float
+    df_data: Optional[List[Dict[str, Any]]] = None  # DataFrame as list of dictionaries
+    df_shape: Optional[tuple] = None  # Shape of the DataFrame (rows, columns)
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest):
@@ -152,6 +201,78 @@ async def upload_csv(user_id: str, file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error uploading file: {str(e)}")
 
+@app.post("/analyze", response_model=AnalysisResponse)
+async def csv_analysis_agent(request: AnalysisRequest):
+    """
+    CSV Analysis Agent endpoint that processes natural language queries on CSV data.
+    
+    Args:
+        request: AnalysisRequest containing the query and user_id
+        
+    Returns:
+        AnalysisResponse with the analysis result
+    """
+    try:
+        # Start timing the request
+        start_time = time.time()
+        
+        # Get user's CSV file path
+        user_csv_folder = csv_agent_service._create_user_folder(request.user_id)
+        
+        # Find the CSV file in user's folder
+        csv_files = [f for f in os.listdir(user_csv_folder) if f.lower().endswith('.csv')]
+        if not csv_files:
+            raise HTTPException(status_code=404, detail=f"No CSV file found for user {request.user_id}. Please upload a CSV file first.")
+        
+        # Use the first CSV file found
+        csv_file_path = os.path.join(user_csv_folder, csv_files[0])
+        
+        # Load the CSV data
+        df = pd.read_csv(csv_file_path)
+        
+        # Create pandas DataFrame agent
+        agent_executor = create_pandas_dataframe_agent(
+            llm,
+            df,
+            agent_type="tool-calling",
+            allow_dangerous_code=True,
+            return_intermediate_steps=True
+        )
+
+        # Execute the query
+        result = agent_executor.invoke({"input": request.query})
+        
+        # Extract DataFrame from intermediate steps
+        extracted_df = None
+        if "intermediate_steps" in result:
+            extracted_df = extract_dataframe_from_result(result["intermediate_steps"])
+        
+        # Prepare DataFrame data for response
+        df_data = None
+        df_shape = None
+        if isinstance(extracted_df, pd.DataFrame):
+            # Convert DataFrame to list of dictionaries for JSON serialization
+            df_data = extracted_df.to_dict('records')
+            df_shape = extracted_df.shape
+        
+        # Calculate response time
+        end_time = time.time()
+        response_time = end_time - start_time
+        
+        return AnalysisResponse(
+            result=result['output'],
+            user_id=request.user_id,
+            query=request.query,
+            response_time_seconds=round(response_time, 2),
+            df_data=df_data,
+            df_shape=df_shape
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error analyzing CSV: {str(e)}")
+
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
@@ -164,7 +285,8 @@ async def root():
         "message": "CSV Agent Chat API",
         "endpoints": {
             "chat": "/chat",
-            "upload": "/upload",
+            "upload": "/upload", 
+            "analyze": "/analyze",
             "health": "/health",
             "docs": "/docs"
         }
