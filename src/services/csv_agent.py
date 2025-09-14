@@ -8,12 +8,13 @@ from typing import Optional, List, Any, Dict
 from dotenv import load_dotenv
 
 from agents import Agent, Runner, AgentOutputSchema, enable_verbose_stdout_logging
-from agents.mcp import MCPServerStdio
+# from agents.mcp import MCPServerStdio
 from agents.model_settings import ModelSettings
 from agents.memory import SQLiteSession
 
 # Import system prompt, memory config, and models
 from src.constants.prompts import CSV_AGENT_SYSTEM_PROMPT
+from src.core.csv_server import analyze_csv_data, execute_code
 from src.constants.memory_config import setup_memory_db, get_session_id
 from src.constants.model_properties import CSVAgentResponse
 
@@ -112,90 +113,96 @@ class CSVAgentService:
             
             print("🔗 CSVAgentService: Connecting to MCP server...")
             # Set up MCP server connection for CSV tools (stdio)
-            async with MCPServerStdio(
-                name="CSV Analysis Server",
-                params={
-                    "command": "venv/bin/python",
-                    "args": ["src/core/csv_server.py"],
-                    "env": {"OPENAI_API_KEY": self.openai_api_key},
-                },
-            ) as mcp_server:
-                print("✅ CSVAgentService: MCP server connected successfully")
+            # async with MCPServerStdio(
+            #     name="CSV Analysis Server",
+            #     params={
+            #         "command": ".venv/Scripts/python",
+            #         "args": ["src/core/csv_server.py"],
+            #         "env": {"OPENAI_API_KEY": self.openai_api_key},
+            #     },
+            # ) as mcp_server:
+            #     print("✅ CSVAgentService: MCP server connected successfully")
                 
-                print("🤖 CSVAgentService: Creating CSV analysis agent...")
-                # Create the agent with structured output and memory
-                # Add folder paths to system prompt
-                agent_instructions = f"""{CSV_AGENT_SYSTEM_PROMPT}
+            #     print("🤖 CSVAgentService: Creating CSV analysis agent...")
+            #     # Create the agent with structured output and memory
+            #     # Add folder paths to system prompt
+            
+            agent_instructions = f"""{CSV_AGENT_SYSTEM_PROMPT}
 
-**IMPORTANT - Your user folder name: {user_id}**
-- Read CSV data from: `data/csv/{user_id}/data.csv`
-- Save images to: `data/plots/{user_id}/image_name.png`
+                    **IMPORTANT - Your user folder name: {user_id}**
+                    - Read CSV data from: `data/csv/{user_id}/data.csv`
+                    - Save images to: `data/plots/{user_id}/image_name.png`
 
-When using execute_code(), define paths like:
-```python
-import pandas as pd
-import matplotlib.pyplot as plt
+                    When using execute_code() tool, define paths like:
+                    ```python
+                    import pandas as pd
+                    import matplotlib.pyplot as plt
 
-# Read data
-df = pd.read_csv('data/csv/{user_id}/data.csv')
+                    # Read data
+                    df = pd.read_csv('data/csv/{user_id}/data.csv')
 
-# Save plots
-plt.savefig('data/plots/{user_id}/chart.png')
+                    # Save plots
+                    plt.savefig('data/plots/{user_id}/chart.png')
+                    Note: Always use encoding as 'utf-8'
+                    
+                    If you get an error from execute_code() tool retry it one more time 
 ```"""
-                
-                agent = Agent(
-                    name="CSV Analysis Agent",
-                    instructions=agent_instructions,
-                    mcp_servers=[mcp_server],
-                    output_type=AgentOutputSchema(CSVAgentResponse, strict_json_schema=False),
-                    model_settings=ModelSettings(
-                        model="gpt-5",
-                        temperature=0,
-                        tool_choice="auto"
-                    ),
-                )
-                print("✅ CSVAgentService: Agent created successfully")
-                
-                print("🚀 CSVAgentService: Running agent with user message...")
-                # Run agent with persistent memory
-                result = await Runner.run(
-                    agent, 
-                    input=message,
-                    session=memory_session,
-                    max_turns=10
-                )
-                print("✅ CSVAgentService: Agent execution completed")
-                
-                print("📊 CSVAgentService: Processing agent response...")
-                # Extract structured response
-                if isinstance(result.final_output, CSVAgentResponse):
-                    response_data = result.final_output.model_dump()
-                    print("✅ CSVAgentService: Structured response extracted successfully")
-                else:
-                    print("⚠️ CSVAgentService: Falling back to unstructured response")
-                    # Fallback if structured output fails
-                    response_data = {
-                        "text": str(result.final_output),
-                        "steps": None,
-                        "image_paths": None,
-                        "table_visualization": None,
-                        "suggested_next_steps": None
-                    }
-                
-                # Add session ID and user ID to response
-                response_data["session_id"] = session_id
-                response_data["user_id"] = user_id
-                
-                # Show memory stats
-                try:
-                    memory_items = await memory_session.get_items()
-                    total_items = len(memory_items) if memory_items else 0
-                    print(f"💭 CSVAgentService: Conversation memory contains {total_items} items")
-                except Exception as mem_error:
-                    print(f"⚠️ CSVAgentService: Could not retrieve memory stats: {mem_error}")
-                
-                print("✅ CSVAgentService: Message processing completed successfully")
-                return response_data
+            
+            with open('system_prompt.txt',encoding='utf-8',mode='a') as f:
+                f.write(agent_instructions)
+            agent = Agent(
+                name="CSV Analysis Agent",
+                instructions=agent_instructions,
+                tools = [analyze_csv_data, execute_code],
+                output_type=AgentOutputSchema(CSVAgentResponse, strict_json_schema=False),
+                model_settings=ModelSettings(
+                    model="gpt-5",
+                    temperature=0,
+                    tool_choice="auto"
+                ),
+            )
+            print("✅ CSVAgentService: Agent created successfully")
+            
+            print("🚀 CSVAgentService: Running agent with user message...")
+            # Run agent with persistent memory
+            result = await Runner.run(
+                agent, 
+                input=message,
+                session=memory_session,
+                max_turns=10
+            )
+            print("✅ CSVAgentService: Agent execution completed")
+            
+            print("📊 CSVAgentService: Processing agent response...")
+            # Extract structured response
+            if isinstance(result.final_output, CSVAgentResponse):
+                response_data = result.final_output.model_dump()
+                print("✅ CSVAgentService: Structured response extracted successfully")
+            else:
+                print("⚠️ CSVAgentService: Falling back to unstructured response")
+                # Fallback if structured output fails
+                response_data = {
+                    "text": str(result.final_output),
+                    "steps": None,
+                    "image_paths": None,
+                    "table_visualization": None,
+                    "suggested_next_steps": None
+                }
+            
+            # Add session ID and user ID to response
+            response_data["session_id"] = session_id
+            response_data["user_id"] = user_id
+            
+            # Show memory stats
+            try:
+                memory_items = await memory_session.get_items()
+                total_items = len(memory_items) if memory_items else 0
+                print(f"💭 CSVAgentService: Conversation memory contains {total_items} items")
+            except Exception as mem_error:
+                print(f"⚠️ CSVAgentService: Could not retrieve memory stats: {mem_error}")
+            
+            print("✅ CSVAgentService: Message processing completed successfully")
+            return response_data
                 
         except Exception as e:
             print(f"❌ CSVAgentService: Error processing message: {str(e)}")

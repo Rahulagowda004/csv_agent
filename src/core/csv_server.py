@@ -5,11 +5,24 @@ import os, subprocess, tempfile
 import pandas as pd
 import numpy as np
 from dotenv import load_dotenv
+import logging
+import sys
+from agents import function_tool
 
+# logging.basicConfig(
+#     level=logging.DEBUG,
+#     format='%(asctime)s - %(levelname)s - %(message)s',
+#     handlers=[
+#         logging.StreamHandler(sys.stdout),
+#         logging.FileHandler('csv_agent.log')
+#     ]
+# )
+# logger = logging.getLogger(__name__)
 # Load environment variables from .env file in project root
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 load_dotenv(os.path.join(project_root, '.env'))
-mcp = FastMCP("CSV-Data-Analysis")
+print(project_root)
+mcp = FastMCP("CSV-Data-Analysis",debug=True)
 
 # # ── tools ────────────────────────────────────────────────────────────
 
@@ -59,7 +72,7 @@ mcp = FastMCP("CSV-Data-Analysis")
 
 # Remember: Your goal is to make data analysis accessible and insightful for users of all technical levels."""
 
-@mcp.tool
+@function_tool
 def analyze_csv_data(user_folder: str) -> dict:
     """Analyze CSV data from the user's folder. Reads the single CSV file and provides comprehensive data profiling."""
     print(f"🔍 DEBUG: analyze_csv_data called for user folder: {user_folder}")
@@ -222,9 +235,16 @@ def analyze_csv_data(user_folder: str) -> dict:
         traceback.print_exc()
         return {"error": error_msg}
 
-@mcp.tool
+@function_tool
 def execute_code(script: str) -> str:
     """Execute Python script for data analysis and visualization with comprehensive data science libraries."""
+    print(f" DEBUG: execute_code called")
+    print("printing script:")
+    # print(script)
+    # log_file = "execution_log.txt"
+    # with open(log_file, "a") as log:
+        
+    #     log.write(f"Script:\n{script}\n")
     try:
         # Create a more robust temp file path
         with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
@@ -254,13 +274,18 @@ sns.set_palette("husl")
 """
             f.write(imports + script)
             temp_path = f.name
-        
+        print(script)
         # Get the path to the virtual environment's Python interpreter
         # The venv is in the csv_agent project root folder
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        venv_dir = os.path.join(project_root, "venv")
-        venv_python = os.path.join(venv_dir, "bin", "python")
-        
+        venv_dir = os.path.join(project_root, ".venv")
+        venv_python = os.path.join(venv_dir, "Scripts", "python.exe" if os.name == "nt" else "python")
+
+        print(venv_python)
+        # log.write(f"Using Python interpreter: {venv_python}\n")
+        # logger.debug("python venv path:")
+        # logger.debug(venv_python)
+        # log.write(f"Script:\n{script}\n")
         # Check if virtual environment exists
         if not os.path.exists(venv_python):
             return "ERROR: Virtual environment not found. Please run 'python3 -m venv venv' in the project root directory."
@@ -284,14 +309,53 @@ sns.set_palette("husl")
             output += f"STDERR:\n{result.stderr}\n"
         if result.returncode != 0:
             output += f"EXIT CODE: {result.returncode}\n"
-            
+        
+        print("printing output")
+        print(output)
+        
         return output if output else "Script executed successfully with no output."
         
     except subprocess.TimeoutExpired:
         return "ERROR: Script execution timed out after 5 minutes."
     except Exception as e:
+        print(f"❌ ERROR: Failed to execute script: {str(e)}")
         return f"ERROR: Failed to execute script: {str(e)}"
 
+# @mcp.tool
+# def question_vagueness_checker(question: str) -> str:
+#     """Check if the user's question is too vague or ambiguous."""
+    
+    
+    
+#     question_lower = question.lower()
+#     response = chat.completions
+    
 
-if __name__ == "__main__":
-    mcp.run()
+script = """
+import pandas as pd
+import os
+
+def calculate_profit_margin_by_category():
+    # Read the data with utf-8 encoding
+    df = pd.read_csv('data/csv/1/data.csv', encoding='utf-8')
+    # Calculate profit and profit margin
+    df['profit'] = df['net_revenue'] - df['cogs']
+    df['profit_margin'] = df['profit'] / df['net_revenue']
+    # Group by product category
+    result = df.groupby('product_category').agg(
+        total_net_revenue=('net_revenue', 'sum'),
+        total_cogs=('cogs', 'sum'),
+        total_profit=('profit', 'sum'),
+        avg_profit_margin=('profit_margin', 'mean')
+    ).reset_index()
+    # Save as table for visualization
+    result = result.sort_values('avg_profit_margin', ascending=False)
+    result.to_csv('data/plots/1/profit_margin_by_category.csv', index=False)
+    return result.to_dict(orient='records')
+
+output = calculate_profit_margin_by_category()
+print(output)
+"""
+
+# result = execute_code(script)
+# print(result)
