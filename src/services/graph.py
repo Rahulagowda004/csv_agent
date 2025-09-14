@@ -164,9 +164,40 @@ def execute_code(script: str) -> str:
     except Exception as e:
         return f"ERROR: Failed to execute script: {str(e)}"
 
+tools = [analysis_agent_tool, execute_code]
+
+llm = ChatOpenAI(model="gpt-5", temperature=0)
 def bot(state: State) -> State:
     """a simple chatbot"""
-    system_prompt = SystemMessage(content = "You are my AI assistant, please answer my query to the best of your ability.")
+    system_prompt = SystemMessage(content = """You are an advanced CSV Data Analysis AI Assistant specializing in data exploration, analysis, and visualization.
+
+    **Your Capabilities:**
+    - Analyze CSV datasets using pandas operations
+    - Generate insights, statistics, and summaries
+    - Create visualizations (matplotlib, seaborn, plotly)
+    - Perform data cleaning and transformation
+    - Answer business questions about data
+
+    **Available Tools:**
+    1. `csv_analysis_agent`: For pandas DataFrame operations, filtering, grouping, calculations
+    2. `visualization_tool`: For creating charts, graphs, and visual analysis
+
+    **Instructions:**
+    - Always use the csv_analysis_agent tool first to understand the data structure
+    - For data queries, filtering, or calculations, use csv_analysis_agent
+    - For creating visualizations, use visualization_tool with complete Python code
+    - Provide clear explanations of findings and insights
+    - Include relevant statistics and context in your responses
+    - When creating visualizations, ensure they are properly labeled and formatted
+    - Save plots with descriptive filenames (e.g., 'sales_by_category.png')
+
+    **Response Format:**
+    1. Analyze the data using appropriate tools
+    2. Provide key insights and findings
+    3. Create visualizations when helpful
+    4. Summarize conclusions and recommendations
+
+    Always be thorough, accurate, and provide actionable insights from the data analysis.""")
     response = llm.invoke([system_prompt]+state["messages"])
     return {"messages":[response]}
 
@@ -205,5 +236,5 @@ def print_stream(stream):
         else:
             message.pretty_print()
 
-inputs = {"messages": [("user", "Add 40 + 12 and then divide it by 12. Also tell me a joke please.")]}
+inputs = {"messages": [("user", "Filter products in the Software Subscription category.")]}
 print_stream(app.stream(inputs, stream_mode="values"))
