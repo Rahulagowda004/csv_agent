@@ -15,7 +15,11 @@ Conversational data analysis for your CSV files. Upload a CSV, ask questions in 
 - **Persistent Memory**: Conversational context and chat history stored in SQLite database
 - **Export Capabilities**: Download processed CSV files and generated plots
 
-<!-- ## Demo Video -->
+## Demo Video
+
+[![CSV Agent Demo](https://img.youtube.com/vi/W82CkTKJWc4/0.jpg)](https://youtu.be/W82CkTKJWc4)
+
+Watch the demo: [https://youtu.be/W82CkTKJWc4](https://youtu.be/W82CkTKJWc4)
 
 
 ## Tech Stack
